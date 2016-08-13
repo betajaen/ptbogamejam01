@@ -14,6 +14,7 @@
 #define LEVEL_WIDTH (SECTION_WIDTH * 2)
 #define LEVEL_HEIGHT (SECTION_HEIGHT)
 #define MAX_OBJECTS_PER_SECTION 16
+#define SECTIONS_PER_LEVEL (2)
 
 #include "retro.c"
 
@@ -56,6 +57,7 @@ typedef struct
 
 typedef struct
 {
+  U32 seed;
   U8  objectCount;
   U8  level[SECTION_WIDTH * SECTION_HEIGHT];
   Object objects[MAX_OBJECTS_PER_SECTION];
@@ -63,6 +65,7 @@ typedef struct
 
 typedef struct
 {
+  U32 seed;
   U32 levelRandom, objectRandom;
   U32 baseX, cameraOffset;
 
@@ -78,22 +81,53 @@ typedef struct
   Point velocity;
 } Game;
 
-Game*      game;
-Level*     level;
+Game*      GAME;
+Level*     LEVEL;
 
-void PushLevel(int seed)
+U32  Random(U32* seed)
+{
+  // TODO
+  (*seed) += 3;
+
+  return *seed;
+}
+
+void MoveSection(Level* level, U8 from, U8 to)
+{
+  memcpy(&level->sections[to], &level->sections[from], sizeof(Section));
+}
+
+void MakeSection(Section* section, U32 seed)
+{
+  memset(section, 0, sizeof(Section));
+}
+
+void PushSection(Level* level, U32 seed)
+{
+  // Move section along
+  MoveSection(level, (SECTIONS_PER_LEVEL - 1), (SECTIONS_PER_LEVEL - 2));
+  MakeSection(&level->sections[(SECTIONS_PER_LEVEL - 1)], seed);
+}
+
+void PushLevel(U32 seed)
 {
   Scope_Push('LEVL');
-  level = Scope_New(Level);
-  memset(level, 0, sizeof(Level));
+  LEVEL = Scope_New(Level);
+  memset(LEVEL, 0, sizeof(Level));
+
+  // Add the first two sections here.
+  PushSection(LEVEL, Random(&LEVEL->seed));
+  PushSection(LEVEL, Random(&LEVEL->seed));
+
+  // TODO: Build player here.
+  // TODO: Build cat player here.
+
 }
 
 void PopLevel()
 {
-  
-  
   Scope_Pop();
-  level = NULL;
+  LEVEL = NULL;
 }
 
 void Init(Settings* settings)
@@ -118,13 +152,11 @@ void Init(Settings* settings)
 
 void Start()
 {
-  game = Scope_New(Game);
+  GAME = Scope_New(Game);
   //AnimatedSpriteObject_Make(&game->player, &ANIMATEDSPRITE_QUOTE_WALK, Canvas_GetWidth() / 2, Canvas_GetHeight() / 2);
   //AnimatedSpriteObject_PlayAnimation(&game->player, true, true);
 
   // Music_Play("origin.mod");
-
-
 }
 
 void Step()
@@ -134,15 +166,14 @@ void Step()
     PopLevel();
   }
 
-
-  if (level == NULL)
+  if (LEVEL == NULL)
   {
-    game->seed = game->seed << 8 | game->seed;
-    game->seed += 0x9328234;
-    PushLevel(game->seed);
+    GAME->seed = GAME->seed << 8 | GAME->seed;
+    GAME->seed += 0x9328234;
+    PushLevel(GAME->seed);
   }
   
-  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%i", game->seed);
+  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%i", GAME->seed);
 
   //Canvas_Splat(&TILES1, 0, 0, NULL);
   Canvas_Debug(&FONT_NEOSANS);
