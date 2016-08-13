@@ -4,6 +4,7 @@
 #define RETRO_WINDOW_DEFAULT_HEIGHT 480
 #define RETRO_CANVAS_DEFAULT_WIDTH (RETRO_WINDOW_DEFAULT_WIDTH / 2)
 #define RETRO_CANVAS_DEFAULT_HEIGHT (RETRO_WINDOW_DEFAULT_HEIGHT / 2)
+#define MAX_CATS 8
 
 #define TILE_SIZE 16
 
@@ -19,8 +20,10 @@
 
 static Font           FONT_NEOSANS;
 static Bitmap         SPRITESHEET;
-static Animation      ANIMATEDSPRITE_QUOTE_IDLE;
-static Animation      ANIMATEDSPRITE_QUOTE_WALK;
+static Animation      ANIMATEDSPRITE_PLAYER_IDLE;
+static Animation      ANIMATEDSPRITE_PLAYER_WALK;
+static Animation      ANIMATEDSPRITE_CAT_IDLE;
+static Animation      ANIMATEDSPRITE_CAT_WALK;
 static Sound          SOUND_COIN;
 static Bitmap         TILES1;
 
@@ -163,9 +166,19 @@ void LoadSectionData()
 
 typedef struct
 {
+  U8  id, x, y;
+  bool exactCollision;
+  U32 tile;
+} CollisionPoint;
+
+typedef struct
+{
   AnimatedSpriteObject sprite;
-  S32                  velocityX, velocitY;
   U8                   objectType;
+  U8                   jumpTime;
+  bool                 wantsToJump, isJumping;
+  CollisionPoint            feet, front;
+  U8                   w, h;
 } Object;
 
 typedef struct
@@ -184,12 +197,8 @@ typedef struct
   U32 baseX, cameraOffset;
   U32 id;
   U32 nextSectionId;
-  U8  feetId;
-  U8  feetX, feetY;
-  U8  frontId;
-  U8  frontX, frontY;
-  S32 frontTile, feetTile;
-  AnimatedSpriteObject player;
+  Object player;
+  Object  playerCats[MAX_CATS];
   Section sections[SECTIONS_PER_LEVEL];
 } Level;
 
@@ -246,6 +255,23 @@ void ScreenPos_ToTilePos(S32 x, S32 y, U8* id, U8* tileX, U8* tileY)
       return;
     }
   }
+}
+
+void CollisionTest(U32 x, U32 y, U8 w, U8 h, CollisionPoint* point)
+{
+  // Tile test
+  ScreenPos_ToTilePos(x, y, &point->id, &point->x, &point->y);
+
+  point->tile = GetTile(point->id, point->x, point->y);
+
+  // @TODO Exact test.
+
+}
+
+void CollisionFind(Object* obj)
+{
+  CollisionTest(obj->sprite.x, obj->sprite.y + obj->h, obj->w, obj->h, &obj->feet);
+  CollisionTest(obj->sprite.x + obj->w, obj->sprite.y, obj->w, obj->h, &obj->front);
 }
 
 void MoveSection(Level* level, U8 from, U8 to)
@@ -314,6 +340,27 @@ void DrawSection(Section* section, int idx)
   Canvas_PrintF(xOffset, 10, &FONT_NEOSANS, 15, "%i/%i:%i", section->id, idx, section->sectionId);
 }
 
+void AddPlayerCat()
+{
+  Object* player = &LEVEL->player;
+
+  for(U32 i=0;i < MAX_CATS;i++)
+  {
+    if (LEVEL->playerCats[i].w == 0)
+    {
+      Object* cat = &LEVEL->playerCats[i];
+
+      cat->w = 16;
+      cat->h = 5;
+
+      AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT_WALK, player->sprite.x + 16, player->sprite.y);
+      AnimatedSpriteObject_PlayAnimation(&cat->sprite, true, true);
+
+      return;
+    }
+  }
+}
+
 void PushLevel(U32 seed)
 {
   Scope_Push('LEVL');
@@ -325,15 +372,17 @@ void PushLevel(U32 seed)
     MakeSection(&LEVEL->sections[i], Random(&LEVEL->seed));
   }
 
-  // TODO: Build player here.
+  // Build player here.
+  AnimatedSpriteObject_Make(&LEVEL->player.sprite, &ANIMATEDSPRITE_PLAYER_WALK, Canvas_GetWidth() / 2, Canvas_GetHeight() / 2);
+  AnimatedSpriteObject_PlayAnimation(&LEVEL->player.sprite, true, true);
 
-  AnimatedSpriteObject_Make(&LEVEL->player, &ANIMATEDSPRITE_QUOTE_WALK, Canvas_GetWidth() / 2, Canvas_GetHeight() / 2);
-  AnimatedSpriteObject_PlayAnimation(&LEVEL->player, true, true);
+  LEVEL->player.sprite.x = 48;
+  LEVEL->player.sprite.y = 48;
+  LEVEL->player.w = 16;
+  LEVEL->player.h = 16;
 
-  LEVEL->player.x = 48;
-  LEVEL->player.y = 48;
-
-  // TODO: Build cat player here.
+  // Build cat player here.
+  AddPlayerCat();
 }
 
 void PopLevel()
@@ -357,10 +406,6 @@ void DrawLevel()
   {
     DrawSection(&LEVEL->sections[i], i);
   }
-
-  // Debug Selected Foot.
-  DrawTile(LEVEL->feetId, LEVEL->feetX, LEVEL->feetY, 1);
-  DrawTile(LEVEL->frontId, LEVEL->frontX, LEVEL->frontY, 1);
 }
 
 void Init(Settings* settings)
@@ -377,8 +422,11 @@ void Init(Settings* settings)
   Font_Load("NeoSans.png", &FONT_NEOSANS, Colour_Make(0,0,255), Colour_Make(255,0,255));
   Bitmap_Load("cave.png", &SPRITESHEET, 0);
 
-  Animation_LoadHorizontal(&ANIMATEDSPRITE_QUOTE_IDLE, &SPRITESHEET, 1, 100, 0, 80, 16, 16);
-  Animation_LoadHorizontal(&ANIMATEDSPRITE_QUOTE_WALK, &SPRITESHEET, 4, 120, 0, 80, 16, 16);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_IDLE, &SPRITESHEET, 1, 100, 0, 80, 16, 16);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_WALK, &SPRITESHEET, 4, 120, 0, 80, 16, 16);
+
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_IDLE, &SPRITESHEET, 1, 100, 0, 91, 16, 5);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_WALK, &SPRITESHEET, 4, 120, 0, 91, 16, 5);
 
   Sound_Load(&SOUND_COIN, "coin.wav");
 
@@ -418,17 +466,35 @@ void Step()
 
   if (Input_GetActionDown(AC_DEBUG_LEFT))
   {
-    LEVEL->player.x-=4;
+    LEVEL->player.sprite.x-=4;
   }
 
   if (Input_GetActionDown(AC_DEBUG_RIGHT))
   {
-    LEVEL->player.x+=4;
+    LEVEL->player.sprite.x+=4;
   }
 
-  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "Feet=%i@%i,%i  Front=%i@%i,%i=%i", 
-  LEVEL->feetId, LEVEL->feetX, LEVEL->feetY, 
-  LEVEL->frontId, LEVEL->frontX, LEVEL->frontY, LEVEL->frontTile);
+  if (Input_GetActionPressed(AC_JUMP))
+  {
+    LEVEL->player.jumpTime = 1;
+    LEVEL->player.wantsToJump = true;
+  }
+
+  if (Input_GetActionDown(AC_JUMP))
+  {
+    if (LEVEL->player.wantsToJump && LEVEL->player.jumpTime < 40)
+    {
+      LEVEL->player.jumpTime++;
+    }
+  }
+
+  if (Input_GetActionReleased(AC_JUMP))
+  {
+    if (LEVEL->player.wantsToJump)
+    {
+      LEVEL->player.isJumping = true;
+    }
+  }
 
   // Generate new section on boundary.
   for (int i=0;i < 1;i++)
@@ -449,30 +515,57 @@ void Step()
   }
 
   // Find feet pos.
-  ScreenPos_ToTilePos(LEVEL->player.x, LEVEL->player.y + 16, &LEVEL->feetId, &LEVEL->feetX, &LEVEL->feetY);
-  ScreenPos_ToTilePos(LEVEL->player.x + 16, LEVEL->player.y, &LEVEL->frontId, &LEVEL->frontX, &LEVEL->frontY);
-
-  LEVEL->feetTile = GetTile(LEVEL->feetId, LEVEL->feetX, LEVEL->feetY);
-  LEVEL->frontTile = GetTile(LEVEL->frontId, LEVEL->frontX, LEVEL->frontY);
   
-  // Apply gravity
-  if (LEVEL->feetTile <= 0)
+  CollisionFind(&LEVEL->player);
+  
+  for (U32 i=0;i < MAX_CATS;i++)
   {
-    LEVEL->player.y += 4;
+    Object* cat = &LEVEL->playerCats[i];
+    if (cat->w == 0)
+      continue;
+
+    CollisionFind(cat);
+
+    if (cat->feet.tile <= 0)
+    {
+      cat->sprite.y += 4;
+    }
+
   }
 
+  // Apply gravity
+  if (LEVEL->player.feet.tile <= 0)
+  {
+    LEVEL->player.sprite.y += 4;
+    LEVEL->player.isJumping = false;
+  }
+
+  if (LEVEL->player.isJumping && LEVEL->player.jumpTime > 0)
+  {
+    LEVEL->player.sprite.y -= 32;
+    LEVEL->player.jumpTime--;
+  }
+  
   DrawLevel();
 
-  Canvas_PlaceAnimated(&LEVEL->player, true);
+  Canvas_PlaceAnimated(&LEVEL->player.sprite, true);
+  for (U32 i=0;i < MAX_CATS;i++)
+  {
+    Object* cat = &LEVEL->playerCats[i];
+    if (cat->w == 0)
+      continue;
+    
+    Canvas_PlaceAnimated(&cat->sprite, true);
+  }
 
   // Out of bounds death
-  if (LEVEL->player.y >= RETRO_CANVAS_DEFAULT_HEIGHT)
+  if (LEVEL->player.sprite.y >= RETRO_CANVAS_DEFAULT_HEIGHT)
   {
     PopLevel();
   }
 
   // Detect Front collisions (rough)
-  if (LEVEL->frontTile > 0)
+  if (LEVEL->player.front.tile > 0)
   {
     // @TODO Nice collision box to tile collision function here.
     PopLevel();
