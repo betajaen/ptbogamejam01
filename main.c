@@ -7,8 +7,8 @@
 
 #define TILE_SIZE 16
 
-#define SECTION_WIDTH (RETRO_WINDOW_DEFAULT_WIDTH / TILE_SIZE)
-#define SECTION_HEIGHT (RETRO_WINDOW_DEFAULT_HEIGHT / TILE_SIZE)
+#define SECTION_WIDTH (RETRO_CANVAS_DEFAULT_WIDTH / TILE_SIZE)
+#define SECTION_HEIGHT (RETRO_CANVAS_DEFAULT_HEIGHT / TILE_SIZE)
 
 #define LEVEL_WIDTH (SECTION_WIDTH * 2)
 #define LEVEL_HEIGHT (SECTION_HEIGHT)
@@ -138,6 +138,8 @@ void PushSection(Level* level, U32 seed)
   // Move section along
   MoveSection(level, (SECTIONS_PER_LEVEL - 1), (SECTIONS_PER_LEVEL - 2));
   MakeSection(&level->sections[(SECTIONS_PER_LEVEL - 1)], seed);
+
+  printf("Pushed Section\n");
 }
 
 void DrawSection(Section* section, S32 xOffset)
@@ -177,9 +179,9 @@ void PopLevel()
 
 void DrawLevel()
 {
-  S32 offset = 0; // @TODO
-  DrawSection(&LEVEL->sections[0], offset);
-  DrawSection(&LEVEL->sections[1], offset + (SECTION_WIDTH * TILE_SIZE));
+  S32 offset = GAME->cameraX % (SECTION_WIDTH * TILE_SIZE * 2);
+  DrawSection(&LEVEL->sections[0], -offset);
+  DrawSection(&LEVEL->sections[1], -offset + (SECTION_WIDTH * TILE_SIZE));
 }
 
 void Init(Settings* settings)
@@ -225,6 +227,20 @@ void Step()
   }
   
   Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%i", GAME->seed);
+
+  // Generate new section on boundary.
+  for (int i=0;i < 2;i++)
+  {
+    GAME->cameraX++;
+
+    S32 y = (SECTION_WIDTH * TILE_SIZE);
+    S32 x = GAME->cameraX % y;
+    if (x == 0)
+    {
+      GAME->cameraX -= y;
+      PushSection(LEVEL, Random(&LEVEL->seed));
+    }
+  }
 
   DrawLevel();
 
