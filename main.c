@@ -1,19 +1,19 @@
 #define RETRO_WINDOW_CAPTION "Cats"
 #define RETRO_ARENA_SIZE Kilobytes(8)
-#define RETRO_WINDOW_DEFAULT_WIDTH 704
+#define RETRO_WINDOW_DEFAULT_WIDTH 1280
 #define RETRO_WINDOW_DEFAULT_HEIGHT 480
 #define RETRO_CANVAS_DEFAULT_WIDTH (RETRO_WINDOW_DEFAULT_WIDTH / 2)
 #define RETRO_CANVAS_DEFAULT_HEIGHT (RETRO_WINDOW_DEFAULT_HEIGHT / 2)
 
 #define TILE_SIZE 16
 
-#define SECTION_WIDTH (RETRO_CANVAS_DEFAULT_WIDTH / TILE_SIZE)
-#define SECTION_HEIGHT (RETRO_CANVAS_DEFAULT_HEIGHT / TILE_SIZE)
+#define SECTION_WIDTH 22  //(RETRO_CANVAS_DEFAULT_WIDTH / TILE_SIZE)
+#define SECTION_HEIGHT 15 //(RETRO_CANVAS_DEFAULT_HEIGHT / TILE_SIZE)
 
 #define LEVEL_WIDTH (SECTION_WIDTH * 2)
 #define LEVEL_HEIGHT (SECTION_HEIGHT)
 #define MAX_OBJECTS_PER_SECTION 16
-#define SECTIONS_PER_LEVEL (2)
+#define SECTIONS_PER_LEVEL (4)
 
 #include "retro.c"
 
@@ -158,7 +158,7 @@ typedef struct
 
 typedef struct
 {
-  U32 seed;
+  U32 seed, id;
   U8  sectionId;
   U8  objectCount;
   Object objects[MAX_OBJECTS_PER_SECTION];
@@ -169,8 +169,9 @@ typedef struct
   U32 seed;
   U32 levelRandom, objectRandom;
   U32 baseX, cameraOffset;
-
-  Section sections[2];
+  U32 id;
+  U32 nextSectionId;
+  Section sections[SECTIONS_PER_LEVEL];
 } Level;
 
 typedef struct
@@ -204,25 +205,28 @@ void MakeSection(Section* section, U32 seed)
 {
   memset(section, 0, sizeof(Section));
   section->seed = seed;
-  section->sectionId = Random(&section->seed) % SECTION_DATA_COUNT; // @TODO
+  section->id = LEVEL->nextSectionId++;
 
-//  for(S32 i=0;i < SECTION_WIDTH;i++)
-//  {
-//    for (S32 j=0;j < SECTION_HEIGHT;j++)
-//    {
-//      U32 index = Random(&section->seed) % 3;
-//      section->level[i + (j * SECTION_WIDTH)] = index;
-//    }
-//  }
+  if (section->id < 3)
+  {
+    section->sectionId = 0;
+  }
+  else
+  {
+    section->sectionId = 1 + (Random(&section->seed) % (SECTION_DATA_COUNT- 1)); // @TODO
+  }
 }
 
 void PushSection(Level* level, U32 seed)
 {
   // Move section along
-  MoveSection(level, (SECTIONS_PER_LEVEL - 1), (SECTIONS_PER_LEVEL - 2));
+  for (U32 i=0;i < (SECTIONS_PER_LEVEL - 1);i++)
+  {
+    MoveSection(level, i + 1, i);
+  }
+
   MakeSection(&level->sections[(SECTIONS_PER_LEVEL - 1)], seed);
 
-  printf("Pushed Section\n");
 }
 
 void DrawSection(Section* section, S32 xOffset)
@@ -240,6 +244,7 @@ void DrawSection(Section* section, S32 xOffset)
       }
     }
   }
+  Canvas_PrintF(xOffset, 10, &FONT_NEOSANS, 15, "%i:%i", section->id, section->sectionId);
 }
 
 void PushLevel(U32 seed)
@@ -248,9 +253,12 @@ void PushLevel(U32 seed)
   LEVEL = Scope_New(Level);
   memset(LEVEL, 0, sizeof(Level));
 
-  // Add the first two sections here.
-  PushSection(LEVEL, Random(&LEVEL->seed));
-  PushSection(LEVEL, Random(&LEVEL->seed));
+  for (U32 i=0;i < SECTIONS_PER_LEVEL;i++)
+  {
+    MakeSection(&LEVEL->sections[i], Random(&LEVEL->seed));
+  }
+
+  printf("%i", LEVEL->sections[0].sectionId);
 
   // TODO: Build player here.
   // TODO: Build cat player here.
@@ -265,8 +273,12 @@ void PopLevel()
 void DrawLevel()
 {
   S32 offset = GAME->cameraX % (SECTION_WIDTH * TILE_SIZE * 2);
-  DrawSection(&LEVEL->sections[0], -offset);
-  DrawSection(&LEVEL->sections[1], -offset + (SECTION_WIDTH * TILE_SIZE));
+
+  for (U32 i=0;i < SECTIONS_PER_LEVEL;i++)
+  {
+    DrawSection(&LEVEL->sections[i], -offset + (i * (SECTION_WIDTH * TILE_SIZE)));
+  }
+
 }
 
 void Init(Settings* settings)
@@ -287,9 +299,6 @@ void Init(Settings* settings)
   Sound_Load(&SOUND_COIN, "coin.wav");
 
   Bitmap_Load("tiles1.png", &TILES1, 16);
-
-
-
 }
 
 void Start()
@@ -326,7 +335,7 @@ void Step()
     PushLevel(Random(&GAME->seed));
   }
   
-  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%i", GAME->seed);
+  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%i", GAME->cameraX);
 
   // Generate new section on boundary.
   for (int i=0;i < 8;i++)
