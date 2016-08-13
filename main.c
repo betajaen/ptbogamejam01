@@ -5,6 +5,7 @@
 #define RETRO_CANVAS_DEFAULT_WIDTH (RETRO_WINDOW_DEFAULT_WIDTH / 2)
 #define RETRO_CANVAS_DEFAULT_HEIGHT (RETRO_WINDOW_DEFAULT_HEIGHT / 2)
 #define MAX_CATS 8
+#define MAX_JUMP_TIME 20
 
 #define TILE_SIZE 16
 
@@ -175,9 +176,9 @@ typedef struct
 {
   AnimatedSpriteObject sprite;
   U8                   objectType;
-  U8                   jumpTime;
-  bool                 wantsToJump, isJumping;
-  CollisionPoint       feet, front;
+  U8                   jumpTime, jumpForward;
+  bool                 wantsToJump, isJumping, forwardFalling;
+  CollisionPoint       feet, front, diag;
   U8                   w, h;
   bool                 alive;
 } Object;
@@ -195,6 +196,7 @@ typedef struct
 {
   U32 seed;
   U32 levelRandom, objectRandom;
+  U32 speed;
   S32 frameMovementInput;
   U32 id;
   U32 nextSectionId;
@@ -271,6 +273,7 @@ void CollisionFind(Object* obj)
 {
   CollisionTest(obj->sprite.x, obj->sprite.y + obj->h, obj->w, obj->h, &obj->feet);
   CollisionTest(obj->sprite.x + obj->w, obj->sprite.y, obj->w, obj->h, &obj->front);
+  CollisionTest(obj->sprite.x + obj->w, obj->sprite.y + obj->h, obj->w, obj->h, &obj->diag);
 }
 
 void MoveSection(Level* level, U8 from, U8 to)
@@ -353,8 +356,10 @@ void AddPlayerCat()
       cat->h = 5;
       cat->alive = true;
 
-      AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT_WALK, player->sprite.x + 16, player->sprite.y);
+      AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT_WALK, player->sprite.x, player->sprite.y);
       AnimatedSpriteObject_PlayAnimation(&cat->sprite, true, true);
+
+      cat->sprite.x += 8 + Random(&LEVEL->seed) % 48;
 
       return;
     }
@@ -372,6 +377,8 @@ void PushLevel(U32 seed)
     MakeSection(&LEVEL->sections[i], Random(&LEVEL->seed));
   }
 
+  LEVEL->speed = 1;
+
   Object* player = &LEVEL->playerObjects[0];
 
   // Build player here.
@@ -385,6 +392,9 @@ void PushLevel(U32 seed)
   player->alive = true;
 
   // Build cat player here.
+  AddPlayerCat();
+  AddPlayerCat();
+  AddPlayerCat();
   AddPlayerCat();
 }
 
@@ -461,18 +471,57 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
 
   bool isAlive = true;
 
-  // Gravity
+  // In air - Gravity
   if (playerObject->feet.tile <= 0)
   {
-    playerObject->sprite.y += 4;
-    playerObject->isJumping = false;
+    // Holding jump over edge
+    if (playerObject->wantsToJump && playerObject->jumpTime > 10)
+    {
+      if (playerObject->jumpTime > MAX_JUMP_TIME)
+        playerObject->jumpTime = MAX_JUMP_TIME;
+
+      playerObject->isJumping = true;
+      playerObject->wantsToJump = false; 
+      playerObject->jumpForward += 4;
+    }
+
+    if (playerObject->isJumping && playerObject->jumpTime <= 0)
+    {
+      playerObject->sprite.y += 4;
+      playerObject->isJumping = false;
+
+      if (playerObject->forwardFalling)
+      {
+        playerObject->sprite.x += 1;
+      }
+
+    }
+    else if (!playerObject->isJumping)
+    {
+      playerObject->sprite.y += 4;
+      if (playerObject->forwardFalling)
+      {
+        playerObject->sprite.x += 1;
+      }
+    }
+  }
+  // On ground
+  else
+  {
+    playerObject->forwardFalling = false;
   }
 
-  // End of Jump
+  // Jumping
   if (playerObject->isJumping && playerObject->jumpTime > 0)
   {
-    playerObject->sprite.y -= 32;
+    playerObject->sprite.y -= 4;
     playerObject->jumpTime--;
+    if (playerObject->jumpForward--)
+    {
+      playerObject->sprite.x += 2;
+      playerObject->forwardFalling = 2;
+    }
+    printf("Jumping => %i\n", playerObject->jumpTime);
   }
 
   // Out of bounds check
@@ -483,7 +532,7 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
   }
 
   // Front Collision check
-  if (isAlive && playerObject->front.tile > 0)
+  if (isAlive && !isPlayer && playerObject->front.tile > 0)
   {
     // @TODO Better collisions
     printf("Front collision\n");
@@ -526,11 +575,24 @@ void Step()
     for (U32 i=0;i < (MAX_CATS + 1);i++)
     {
       Object* playerObject = &LEVEL->playerObjects[i];
-      if (!playerObject->alive)
+      if ((!playerObject->alive || playerObject->isJumping))
+        continue;
+
+      if (playerObject->feet.tile <= 0)
         continue;
 
       playerObject->wantsToJump = true;
-      playerObject->jumpTime = 1;
+      playerObject->jumpForward = 0;
+
+      if (i > 0)
+      {
+        playerObject->jumpTime = (Random(&LEVEL->seed) % 3 == 0) ? 0 : 1;
+      }
+      else
+      {
+        playerObject->jumpTime = 1;
+      }
+
     }
 
   }
@@ -543,9 +605,17 @@ void Step()
       if (!playerObject->alive)
         continue;
 
-      if (playerObject->wantsToJump && playerObject->jumpTime < 40)
+      if ((playerObject->jumpTime < MAX_JUMP_TIME) && playerObject->wantsToJump)
       {
-        playerObject->jumpTime++;
+        if (i > 0)
+        {
+          playerObject->jumpTime += 1 + (Random(&LEVEL->seed) % 3);
+        }
+        else
+        {
+          playerObject->jumpTime += 1;
+        }
+
       }
     }
   }
@@ -555,18 +625,23 @@ void Step()
     for (U32 i=0;i < (MAX_CATS + 1);i++)
     {
       Object* playerObject = &LEVEL->playerObjects[i];
-      if (!playerObject->alive)
+      if (!playerObject->alive  || playerObject->isJumping)
         continue;
 
-      if (playerObject->wantsToJump)
+      if (playerObject->wantsToJump )
       {
+        if (playerObject->jumpTime > MAX_JUMP_TIME)
+          playerObject->jumpTime = MAX_JUMP_TIME;
+
         playerObject->isJumping = true;
+        playerObject->wantsToJump = false;
+        playerObject->jumpForward = playerObject->jumpForward / 2;
       }
     }
   }
 
   // Generate new section on boundary.
-  for (int i=0;i < 1;i++)
+  for (U32 i=0;i < LEVEL->speed;i++)
   {
     for (U32 k=0;k < SECTIONS_PER_LEVEL;k++)
     {
@@ -598,6 +673,10 @@ void Step()
   DrawLevel();
 
   // Draw
+  Object* player = &LEVEL->playerObjects[0];
+  S32 leashX0 = player->sprite.x + player->w / 3;
+  S32 leashY0 = player->sprite.y + player->h / 2;
+
   for (U32 i=0;i < (MAX_CATS + 1);i++)
   {
     Object* playerObject = &LEVEL->playerObjects[i];
@@ -608,10 +687,12 @@ void Step()
 
     if (i > 0)
     {
-      S32 offset = LEVEL->sections[playerObject->front.id].x0;
-      S32 x = playerObject->front.x * TILE_SIZE;
-      S32 y = playerObject->front.y * TILE_SIZE;
-      Splat_Tile(&TILES1, offset + x, y, TILE_SIZE, 1);
+      if (playerObject->feet.tile <= 0)
+        SDL_SetRenderDrawColor(gRenderer, 0x55, 0x55, 0x55, 0xFF);
+      else
+        SDL_SetRenderDrawColor(gRenderer, 0x55, 0xFF, 0x55, 0xFF);
+      SDL_RenderDrawLine(gRenderer, leashX0, leashY0, playerObject->sprite.x + playerObject->w / 2, playerObject->sprite.y);
+      SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
     }
   }
 
