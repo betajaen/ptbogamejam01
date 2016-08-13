@@ -176,8 +176,10 @@ typedef struct
 {
   AnimatedSpriteObject sprite;
   U8                   objectType;
-  U8                   jumpTime, jumpForward;
-  bool                 wantsToJump, isJumping, forwardFalling;
+  U8                   jumpStrength;
+  bool                 wantsToJump, isJumping;
+  S32                  jsX, jsY, jcX, jcY, jeX, jeY, jlX, jlY, jType;
+  U32                  jT, jTMax;
   CollisionPoint       feet, front, diag;
   U8                   w, h;
   bool                 alive;
@@ -257,6 +259,32 @@ void ScreenPos_ToTilePos(S32 x, S32 y, U8* id, U8* tileX, U8* tileY)
     }
   }
 }
+
+S32 HeightAt(S32 x)
+{
+  for (U32 i=0;i < SECTIONS_PER_LEVEL;i++)
+  {
+    Section* section = &LEVEL->sections[i];
+
+    if (x >= section->x0 && x < section->x1)
+    {
+      S32 tx = (x - section->x0);
+
+      tx /= TILE_SIZE;
+
+      for (U32 y=0;y < SECTION_HEIGHT;y++)
+      {
+        int tile = GetTile(i, tx, y);
+        if (tile > 0)
+          return y * TILE_SIZE;
+      }
+
+      return SECTION_HEIGHT * TILE_SIZE;
+    }
+  }
+  return SECTION_HEIGHT * TILE_SIZE;
+}
+
 
 void CollisionTest(U32 x, U32 y, U8 w, U8 h, CollisionPoint* point)
 {
@@ -465,6 +493,16 @@ void Start()
   // Music_Play("origin.mod");
 }
 
+void jumpCurve(Object* playerObject, U32 t, S32* x, S32* y)
+{
+  float T = (float) t / (float) playerObject->jTMax;
+  float xf = (powf(1.0f - T, 2.0f) * (float) playerObject->jsX) + (2.0f * (1.0f - T) * T * (float) playerObject->jcX) + (powf(T, 2.0f) * (float) playerObject->jeX);
+  float yf = (powf(1.0f - T, 2.0f) * (float) playerObject->jsY) + (2.0f * (1.0f - T) * T * (float) playerObject->jcY) + (powf(T, 2.0f) * (float) playerObject->jeY);
+
+  *x = (S32) xf;
+  *y = (S32) yf;
+}
+
 bool HandlePlayerObject(Object* playerObject, bool isPlayer)
 {
   CollisionFind(playerObject);
@@ -474,6 +512,7 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
   // In air - Gravity
   if (playerObject->feet.tile <= 0)
   {
+  #if 0
     // Holding jump over edge
     if (playerObject->wantsToJump && playerObject->jumpTime > 10)
     {
@@ -496,32 +535,36 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
       }
 
     }
-    else if (!playerObject->isJumping)
+    else 
+    #endif
+    if (!playerObject->isJumping)
     {
       playerObject->sprite.y += 4;
-      if (playerObject->forwardFalling)
-      {
-        playerObject->sprite.x += 1;
-      }
     }
-  }
-  // On ground
-  else
-  {
-    playerObject->forwardFalling = false;
   }
 
   // Jumping
-  if (playerObject->isJumping && playerObject->jumpTime > 0)
+  if (playerObject->isJumping)
   {
-    playerObject->sprite.y -= 4;
-    playerObject->jumpTime--;
-    if (playerObject->jumpForward--)
+    S32 x, y;
+    jumpCurve(playerObject, playerObject->jT, &x, &y);
+    playerObject->jlX = playerObject->sprite.x;
+    playerObject->jlY = playerObject->sprite.y;
+
+    playerObject->sprite.x = x;
+    playerObject->sprite.y = y;
+
+    playerObject->jT++;
+    
+    if (playerObject->jType == 0 && playerObject->jT >= playerObject->jTMax)
     {
-      playerObject->sprite.x += 2;
-      playerObject->forwardFalling = 2;
+      playerObject->isJumping = false;
     }
-    printf("Jumping => %i\n", playerObject->jumpTime);
+    else if (playerObject->jType == 1 && playerObject->jT >= playerObject->jTMax / 2)
+    {
+      playerObject->isJumping = false;
+    }
+
   }
 
   // Out of bounds check
@@ -582,19 +625,16 @@ void Step()
         continue;
 
       playerObject->wantsToJump = true;
-      playerObject->jumpForward = 0;
 
       if (i > 0)
       {
-        playerObject->jumpTime = (Random(&LEVEL->seed) % 3 == 0) ? 0 : 1;
+        playerObject->jumpStrength = (Random(&LEVEL->seed) % 3 == 0) ? 0 : 1;
       }
       else
       {
-        playerObject->jumpTime = 1;
+        playerObject->jumpStrength = 1;
       }
-
     }
-
   }
 
   if (Input_GetActionDown(AC_JUMP))
@@ -605,15 +645,15 @@ void Step()
       if (!playerObject->alive)
         continue;
 
-      if ((playerObject->jumpTime < MAX_JUMP_TIME) && playerObject->wantsToJump)
+      if ((playerObject->jumpStrength < MAX_JUMP_TIME) && playerObject->wantsToJump)
       {
         if (i > 0)
         {
-          playerObject->jumpTime += 1 + (Random(&LEVEL->seed) % 3);
+          playerObject->jumpStrength += 1 + (Random(&LEVEL->seed) % 3);
         }
         else
         {
-          playerObject->jumpTime += 1;
+          playerObject->jumpStrength += 1;
         }
 
       }
@@ -630,12 +670,25 @@ void Step()
 
       if (playerObject->wantsToJump )
       {
-        if (playerObject->jumpTime > MAX_JUMP_TIME)
-          playerObject->jumpTime = MAX_JUMP_TIME;
+        if (playerObject->jumpStrength > MAX_JUMP_TIME)
+          playerObject->jumpStrength = MAX_JUMP_TIME;
 
         playerObject->isJumping = true;
         playerObject->wantsToJump = false;
-        playerObject->jumpForward = playerObject->jumpForward / 2;
+
+        playerObject->jsX = playerObject->sprite.x;
+        playerObject->jsY = playerObject->sprite.y;
+        
+        playerObject->jeX = playerObject->jsX + 60;
+        playerObject->jeY = HeightAt(playerObject->jeX) - playerObject->h;
+
+        playerObject->jcX = playerObject->jsX + 30;
+        playerObject->jcY = playerObject->jeY - 30;
+        
+        playerObject->jTMax = 30;
+        playerObject->jT = 0;
+        playerObject->jType = 0;
+
       }
     }
   }
@@ -693,6 +746,19 @@ void Step()
         SDL_SetRenderDrawColor(gRenderer, 0x55, 0xFF, 0x55, 0xFF);
       SDL_RenderDrawLine(gRenderer, leashX0, leashY0, playerObject->sprite.x + playerObject->w / 2, playerObject->sprite.y);
       SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    }
+
+    if (playerObject->isJumping)
+    {
+      S32 x, y, lx, ly;
+      jumpCurve(playerObject, 0, &lx, &ly);
+      for(U32 k=1;k < playerObject->jTMax;k++)
+      {
+        jumpCurve(playerObject, k, &x, &y);
+        SDL_RenderDrawLine(gRenderer, x, y, lx, ly);
+        lx = x;
+        ly = y;
+      }
     }
   }
 
