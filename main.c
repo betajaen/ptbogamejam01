@@ -69,6 +69,88 @@ typedef enum
 
 typedef struct
 {
+  U8  level[SECTION_WIDTH * SECTION_HEIGHT];
+} SectionData;
+
+SectionData* SECTION_DATA[256];
+U32 SECTION_DATA_COUNT;
+
+char* skipWhitespace(char* s)
+{
+  while(*s != 0 && isspace(*s))
+    s++;
+  return s;
+}
+
+char* skipToDigit(char* s)
+{
+  while(*s != 0 && !isdigit(*s))
+    s++;
+  return s;
+}
+
+char* skipString(char* s, const char* str)
+{
+  s = skipWhitespace(s);
+  s += strlen(str);
+  s = skipWhitespace(s);
+  return s;
+}
+
+bool skipToString(char* s, char** t, const char* str)
+{
+  (*t) = strstr(s, str);
+  if ((*t) == NULL)
+    return false;
+  return true;
+}
+
+char* readUInt(char* s, U32* i)
+{
+  (*i) = 0;
+
+  while(*s != 0 && isdigit(*s))
+  {
+    (*i) = (*i) * 10  + ((*s) - '0');
+    s++;
+  }
+
+  return s;
+}
+
+void LoadSectionData()
+{
+
+  U8 sectionIndex = 0;
+
+  U32 dataSize;
+  char* data = TextFile_Load("sections.tmx", &dataSize);
+  
+  while(*data != 0)
+  {
+    char* t;
+    SectionData* section = SECTION_DATA[sectionIndex++];
+    if (skipToString(data, &t, "\"csv\">"))
+    {
+      data = skipString(t, "\"csv\">");
+      for(U32 i=0;i < (SECTION_WIDTH * SECTION_HEIGHT); i++)
+      {
+        U32 v = 0;
+        data = readUInt(data, &v);
+        data = skipToDigit(data);
+        section->level[i] = v;
+      }
+      printf("\n");
+    }
+    else
+      break;
+  }
+
+  SECTION_DATA_COUNT = sectionIndex;
+}
+
+typedef struct
+{
   AnimatedSpriteObject sprite;
   S32                  velocityX, velocitY;
   U8                   objectType;
@@ -77,8 +159,8 @@ typedef struct
 typedef struct
 {
   U32 seed;
+  U8  sectionId;
   U8  objectCount;
-  U8  level[SECTION_WIDTH * SECTION_HEIGHT];
   Object objects[MAX_OBJECTS_PER_SECTION];
 } Section;
 
@@ -122,15 +204,16 @@ void MakeSection(Section* section, U32 seed)
 {
   memset(section, 0, sizeof(Section));
   section->seed = seed;
+  section->sectionId = Random(&section->seed) % SECTION_DATA_COUNT; // @TODO
 
-  for(S32 i=0;i < SECTION_WIDTH;i++)
-  {
-    for (S32 j=0;j < SECTION_HEIGHT;j++)
-    {
-      U32 index = Random(&section->seed) % 3;
-      section->level[i + (j * SECTION_WIDTH)] = index;
-    }
-  }
+//  for(S32 i=0;i < SECTION_WIDTH;i++)
+//  {
+//    for (S32 j=0;j < SECTION_HEIGHT;j++)
+//    {
+//      U32 index = Random(&section->seed) % 3;
+//      section->level[i + (j * SECTION_WIDTH)] = index;
+//    }
+//  }
 }
 
 void PushSection(Level* level, U32 seed)
@@ -148,7 +231,9 @@ void DrawSection(Section* section, S32 xOffset)
   {
     for (S32 j=0;j < SECTION_HEIGHT;j++)
     {
-      U8 index = section->level[i + (j * SECTION_WIDTH)];
+      SectionData* data = SECTION_DATA[section->sectionId];
+
+      U8 index = data->level[i + (j * SECTION_WIDTH)];
       if (index > 0)
       {
         Splat_Tile(&TILES1, xOffset + (i * TILE_SIZE), (j * TILE_SIZE), TILE_SIZE, index - 1);
@@ -202,12 +287,27 @@ void Init(Settings* settings)
   Sound_Load(&SOUND_COIN, "coin.wav");
 
   Bitmap_Load("tiles1.png", &TILES1, 16);
+
+
+
 }
 
 void Start()
 {
+  // This is 'different' from the game memory, it's more of a RAM, so it shouldn't be part of the Arena mem.
+  for (int i=0; i < 256;i++)
+  {
+    SectionData* data = malloc(sizeof(SectionData));
+    memset(data, 0, sizeof(SectionData));
+
+    SECTION_DATA[i] = data;
+  }
+
+  LoadSectionData();
+
   GAME = Scope_New(Game);
   GAME->seed = 1;
+
   //AnimatedSpriteObject_Make(&game->player, &ANIMATEDSPRITE_QUOTE_WALK, Canvas_GetWidth() / 2, Canvas_GetHeight() / 2);
   //AnimatedSpriteObject_PlayAnimation(&game->player, true, true);
 
@@ -229,7 +329,7 @@ void Step()
   Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%i", GAME->seed);
 
   // Generate new section on boundary.
-  for (int i=0;i < 2;i++)
+  for (int i=0;i < 8;i++)
   {
     GAME->cameraX++;
 

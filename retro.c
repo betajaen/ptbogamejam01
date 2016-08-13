@@ -186,6 +186,38 @@ void* Resource_Load(const char* name, U32* outSize)
 #endif
 }
 
+char* TextFile_Load(const char* name, U32* outSize)
+{
+  char* data = NULL;
+#if defined(RETRO_WINDOWS)
+  U32 resourceSize = 0;
+  void* resourceData = Resource_Load(name, &resourceSize);
+
+  data = (char*) malloc(resourceSize + 1);
+  memcpy(data, resourceData, resourceSize);
+  data[resourceSize] = 0;
+
+  (*outSize) = resourceSize;
+
+#elif defined(RETRO_BROWSER)
+  RETRO_MAKE_BROWSER_PATH(name);
+  FILE* f = fopen(RETRO_BROWSER_PATH, "rb");
+  fseek(f, SEEK_END, 0);
+  int s = ftell(f);
+  fseek(f, SEEK_SET, 0);
+
+  data = (char*) malloc(s + 1);
+  fread(data, s, 1, f);
+  fclose(f);
+
+  data[s] = 0;
+  (*outSize) = s;
+
+#endif
+
+
+  return data;
+}
 
 void  Palette_LoadFromBitmap(const char* name, Palette* palette)
 {

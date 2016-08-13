@@ -257,6 +257,8 @@ Colour Colour_Make(U8 r, U8 g, U8 b);
 
 void* Resource_Load(const char* name, U32* outSize);
 
+char* TextFile_Load(const char* name, U32* outSize);
+
 // Loads a bitmap and matches the palette to the canvas palette best it can.
 void  Bitmap_Load(const char* name, Bitmap* outBitmap, U8 transparentIndex);
 
