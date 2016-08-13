@@ -177,8 +177,9 @@ typedef struct
   U8                   objectType;
   U8                   jumpTime;
   bool                 wantsToJump, isJumping;
-  CollisionPoint            feet, front;
+  CollisionPoint       feet, front;
   U8                   w, h;
+  bool                 alive;
 } Object;
 
 typedef struct
@@ -194,11 +195,10 @@ typedef struct
 {
   U32 seed;
   U32 levelRandom, objectRandom;
-  U32 baseX, cameraOffset;
+  S32 frameMovementInput;
   U32 id;
   U32 nextSectionId;
-  Object player;
-  Object  playerCats[MAX_CATS];
+  Object  playerObjects[1 + MAX_CATS]; // 0 = Player, 1+ = Cats
   Section sections[SECTIONS_PER_LEVEL];
 } Level;
 
@@ -243,7 +243,7 @@ void ScreenPos_ToTilePos(S32 x, S32 y, U8* id, U8* tileX, U8* tileY)
   {
     Section* section = &LEVEL->sections[i];
 
-    if (x >= section->x0 && x <= section->x1)
+    if (x >= section->x0 && x < section->x1)
     {
       (*id) = i;
 
@@ -251,7 +251,6 @@ void ScreenPos_ToTilePos(S32 x, S32 y, U8* id, U8* tileX, U8* tileY)
       (*tileX) = tx / TILE_SIZE;
       (*tileY) = y / TILE_SIZE;
 
-      // printf("%i / %f\n", tx, (float) tx / (float)(SECTION_WIDTH * TILE_SIZE));
       return;
     }
   }
@@ -342,16 +341,17 @@ void DrawSection(Section* section, int idx)
 
 void AddPlayerCat()
 {
-  Object* player = &LEVEL->player;
+  Object* player = &LEVEL->playerObjects[0];
 
-  for(U32 i=0;i < MAX_CATS;i++)
+  for(U32 i=1;i < MAX_CATS;i++)
   {
-    if (LEVEL->playerCats[i].w == 0)
+    if (LEVEL->playerObjects[i].alive == false)
     {
-      Object* cat = &LEVEL->playerCats[i];
+      Object* cat = &LEVEL->playerObjects[i];
 
       cat->w = 16;
       cat->h = 5;
+      cat->alive = true;
 
       AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT_WALK, player->sprite.x + 16, player->sprite.y);
       AnimatedSpriteObject_PlayAnimation(&cat->sprite, true, true);
@@ -372,14 +372,17 @@ void PushLevel(U32 seed)
     MakeSection(&LEVEL->sections[i], Random(&LEVEL->seed));
   }
 
-  // Build player here.
-  AnimatedSpriteObject_Make(&LEVEL->player.sprite, &ANIMATEDSPRITE_PLAYER_WALK, Canvas_GetWidth() / 2, Canvas_GetHeight() / 2);
-  AnimatedSpriteObject_PlayAnimation(&LEVEL->player.sprite, true, true);
+  Object* player = &LEVEL->playerObjects[0];
 
-  LEVEL->player.sprite.x = 48;
-  LEVEL->player.sprite.y = 48;
-  LEVEL->player.w = 16;
-  LEVEL->player.h = 16;
+  // Build player here.
+  AnimatedSpriteObject_Make(&player->sprite, &ANIMATEDSPRITE_PLAYER_WALK, Canvas_GetWidth() / 2, Canvas_GetHeight() / 2);
+  AnimatedSpriteObject_PlayAnimation(&player->sprite, true, true);
+
+  player->sprite.x = 48;
+  player->sprite.y = 48;
+  player->w = 16;
+  player->h = 16;
+  player->alive = true;
 
   // Build cat player here.
   AddPlayerCat();
@@ -452,6 +455,49 @@ void Start()
   // Music_Play("origin.mod");
 }
 
+bool HandlePlayerObject(Object* playerObject, bool isPlayer)
+{
+  CollisionFind(playerObject);
+
+  bool isAlive = true;
+
+  // Gravity
+  if (playerObject->feet.tile <= 0)
+  {
+    playerObject->sprite.y += 4;
+    playerObject->isJumping = false;
+  }
+
+  // End of Jump
+  if (playerObject->isJumping && playerObject->jumpTime > 0)
+  {
+    playerObject->sprite.y -= 32;
+    playerObject->jumpTime--;
+  }
+
+  // Out of bounds check
+  if (isAlive && playerObject->sprite.y + playerObject->h >= RETRO_CANVAS_DEFAULT_HEIGHT)
+  {
+    printf("Out of bounds\n");
+    isAlive = false;
+  }
+
+  // Front Collision check
+  if (isAlive && playerObject->front.tile > 0)
+  {
+    // @TODO Better collisions
+    printf("Front collision\n");
+    isAlive = false;
+  }
+
+  if (isAlive == false)
+  {
+    printf("Cat died\n");
+  }
+
+  return isAlive;
+}
+
 void Step()
 {
   if (Input_GetActionReleased(AC_RESET))
@@ -464,35 +510,58 @@ void Step()
     PushLevel(Random(&GAME->seed));
   }
 
+  LEVEL->frameMovementInput = 0;
   if (Input_GetActionDown(AC_DEBUG_LEFT))
   {
-    LEVEL->player.sprite.x-=4;
+    LEVEL->frameMovementInput -= 4;
   }
 
   if (Input_GetActionDown(AC_DEBUG_RIGHT))
   {
-    LEVEL->player.sprite.x+=4;
+    LEVEL->frameMovementInput += 4;
   }
 
   if (Input_GetActionPressed(AC_JUMP))
   {
-    LEVEL->player.jumpTime = 1;
-    LEVEL->player.wantsToJump = true;
+    for (U32 i=0;i < (MAX_CATS + 1);i++)
+    {
+      Object* playerObject = &LEVEL->playerObjects[i];
+      if (!playerObject->alive)
+        continue;
+
+      playerObject->wantsToJump = true;
+      playerObject->jumpTime = 1;
+    }
+
   }
 
   if (Input_GetActionDown(AC_JUMP))
   {
-    if (LEVEL->player.wantsToJump && LEVEL->player.jumpTime < 40)
+    for (U32 i=0;i < (MAX_CATS + 1);i++)
     {
-      LEVEL->player.jumpTime++;
+      Object* playerObject = &LEVEL->playerObjects[i];
+      if (!playerObject->alive)
+        continue;
+
+      if (playerObject->wantsToJump && playerObject->jumpTime < 40)
+      {
+        playerObject->jumpTime++;
+      }
     }
   }
 
   if (Input_GetActionReleased(AC_JUMP))
-  {
-    if (LEVEL->player.wantsToJump)
+  { 
+    for (U32 i=0;i < (MAX_CATS + 1);i++)
     {
-      LEVEL->player.isJumping = true;
+      Object* playerObject = &LEVEL->playerObjects[i];
+      if (!playerObject->alive)
+        continue;
+
+      if (playerObject->wantsToJump)
+      {
+        playerObject->isJumping = true;
+      }
     }
   }
 
@@ -514,64 +583,54 @@ void Step()
     }
   }
 
-  // Find feet pos.
-  
-  CollisionFind(&LEVEL->player);
-  
-  for (U32 i=0;i < MAX_CATS;i++)
+  for (U32 i=0;i < (MAX_CATS + 1);i++)
   {
-    Object* cat = &LEVEL->playerCats[i];
-    if (cat->w == 0)
+    Object* playerObject = &LEVEL->playerObjects[i];
+    if (!playerObject->alive)
       continue;
 
-    CollisionFind(cat);
-
-    if (cat->feet.tile <= 0)
+    if (HandlePlayerObject(playerObject, i == 0) == false)
     {
-      cat->sprite.y += 4;
+      playerObject->alive = false;
     }
-
-  }
-
-  // Apply gravity
-  if (LEVEL->player.feet.tile <= 0)
-  {
-    LEVEL->player.sprite.y += 4;
-    LEVEL->player.isJumping = false;
-  }
-
-  if (LEVEL->player.isJumping && LEVEL->player.jumpTime > 0)
-  {
-    LEVEL->player.sprite.y -= 32;
-    LEVEL->player.jumpTime--;
   }
   
   DrawLevel();
 
-  Canvas_PlaceAnimated(&LEVEL->player.sprite, true);
-  for (U32 i=0;i < MAX_CATS;i++)
+  // Draw
+  for (U32 i=0;i < (MAX_CATS + 1);i++)
   {
-    Object* cat = &LEVEL->playerCats[i];
-    if (cat->w == 0)
+    Object* playerObject = &LEVEL->playerObjects[i];
+    if (!playerObject->alive)
       continue;
     
-    Canvas_PlaceAnimated(&cat->sprite, true);
+    Canvas_PlaceAnimated(&playerObject->sprite, true);
+
+    if (i > 0)
+    {
+      S32 offset = LEVEL->sections[playerObject->front.id].x0;
+      S32 x = playerObject->front.x * TILE_SIZE;
+      S32 y = playerObject->front.y * TILE_SIZE;
+      Splat_Tile(&TILES1, offset + x, y, TILE_SIZE, 1);
+    }
   }
 
-  // Out of bounds death
-  if (LEVEL->player.sprite.y >= RETRO_CANVAS_DEFAULT_HEIGHT)
+  // Out of cats death
+  bool hasCats = false;
+  for (U32 i=1;i < (MAX_CATS + 1);i++)
+  {
+    if (LEVEL->playerObjects[i].alive)
+    {
+      hasCats = true;
+      break;
+    }
+  }
+
+  // Cats dead or player dead.
+  if (!hasCats || !LEVEL->playerObjects[0].alive)
   {
     PopLevel();
   }
-
-  // Detect Front collisions (rough)
-  if (LEVEL->player.front.tile > 0)
-  {
-    // @TODO Nice collision box to tile collision function here.
-    PopLevel();
-  }
-
-  //AnimatedSpriteObject(&GAME->player, true, true);
 
   //Canvas_Splat(&TILES1, 0, 0, NULL);
   Canvas_Debug(&FONT_NEOSANS);
