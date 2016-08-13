@@ -1,4 +1,4 @@
-solution "Game"
+solution "Cats"
 
       -- Red Game --------------------------------------------------------------
 
@@ -15,7 +15,7 @@ solution "Game"
         defines       { "NDEBUG", "_CRT_SECURE_NO_WARNINGS", "_WINSOCK_DEPRECATED_NO_WARNINGS" }
         flags         { "Optimize" }
 
-      project "Game"
+      project "Cats"
           kind            "ConsoleApp"
           language        "C++"
           flags           { "FatalWarnings", "NoExceptions", "NoRTTI" }
