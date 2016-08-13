@@ -1,4 +1,18 @@
 #define RETRO_WINDOW_CAPTION "Cats"
+#define RETRO_WINDOW_DEFAULT_WIDTH 704
+#define RETRO_WINDOW_DEFAULT_HEIGHT 480
+#define RETRO_CANVAS_DEFAULT_WIDTH (RETRO_WINDOW_DEFAULT_WIDTH / 2)
+#define RETRO_CANVAS_DEFAULT_HEIGHT (RETRO_WINDOW_DEFAULT_HEIGHT / 2)
+
+#define TILE_WIDTH 16
+#define TILE_HEIGHT 16
+
+#define SECTION_WIDTH (RETRO_WINDOW_DEFAULT_WIDTH / TILE_WIDTH)
+#define SECTION_HEIGHT (RETRO_WINDOW_DEFAULT_HEIGHT / TILE_HEIGHT)
+
+#define LEVEL_WIDTH (SECTION_WIDTH * 2)
+#define LEVEL_HEIGHT (SECTION_HEIGHT)
+#define MAX_OBJECTS_PER_SECTION 16
 
 #include "retro.c"
 
@@ -26,17 +40,40 @@ typedef enum
 
 typedef struct
 {
+  AnimatedSpriteObject sprite;
+  S32                  velocityX, velocitY;
+  U8                   objectType;
+} Object;
+
+typedef struct
+{
+  U8  objectCount;
+  U8  level[SECTION_WIDTH * SECTION_HEIGHT];
+  Object objects[MAX_OBJECTS_PER_SECTION];
+} Section;
+
+typedef struct
+{
+  U32 levelRandom, objectRandom;
+  U32 baseX, cameraOffset;
+
+  Section sections[2];
+} Level;
+
+typedef struct
+{
+  U32 seed;
+  U32 cameraX;
+
   AnimatedSpriteObject player;
   Point velocity;
 } GameState;
+
 
 GameState* state;
 
 void Init(Settings* settings)
 {
-  settings->windowWidth = 1280;
-  settings->windowHeight = 720;
-
   Palette_Make(&settings->palette);
   Palette_LoadFromBitmap("palette.png", &settings->palette);
 
