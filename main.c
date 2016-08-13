@@ -21,6 +21,7 @@ static Bitmap         SPRITESHEET;
 static Animation      ANIMATEDSPRITE_QUOTE_IDLE;
 static Animation      ANIMATEDSPRITE_QUOTE_WALK;
 static Sound          SOUND_COIN;
+static Bitmap         TILES1;
 
 typedef enum 
 {
@@ -87,6 +88,8 @@ void Init(Settings* settings)
   Animation_LoadHorizontal(&ANIMATEDSPRITE_QUOTE_WALK, &SPRITESHEET, 4, 120, 0, 80, 16, 16);
 
   Sound_Load(&SOUND_COIN, "coin.wav");
+
+  Bitmap_Load("tiles1.png", &TILES1, 0);
 }
 
 void Start()
@@ -104,5 +107,6 @@ void Start()
 
 void Step()
 {
+  Canvas_Splat(&TILES1, 0, 0, NULL);
   Canvas_Debug(&FONT_NEOSANS);
 }
