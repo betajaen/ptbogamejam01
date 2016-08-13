@@ -59,6 +59,8 @@ typedef enum
   AC_CONFIRM,
   AC_CANCEL,
   AC_RESET,
+  AC_DEBUG_LEFT,
+  AC_DEBUG_RIGHT
 } Actions;
 
 typedef enum
@@ -140,6 +142,16 @@ void LoadSectionData()
         data = skipToDigit(data);
         section->level[i] = v;
       }
+
+      for(U32 j=0;j < (SECTION_HEIGHT); j++)
+      {
+        for(U32 i=0;i < (SECTION_WIDTH); i++)
+        {
+          printf("%i,", section->level[i + (j * SECTION_WIDTH)]);
+        }
+        printf("\n");
+      }
+
       printf("\n");
     }
     else
@@ -161,6 +173,7 @@ typedef struct
   U32 seed, id;
   U8  sectionId;
   U8  objectCount;
+  S32 x0, x1;
   Object objects[MAX_OBJECTS_PER_SECTION];
 } Section;
 
@@ -171,16 +184,18 @@ typedef struct
   U32 baseX, cameraOffset;
   U32 id;
   U32 nextSectionId;
+  U8  feetId;
+  U8  feetX, feetY;
+  U8  frontId;
+  U8  frontX, frontY;
+  S32 frontTile, feetTile;
+  AnimatedSpriteObject player;
   Section sections[SECTIONS_PER_LEVEL];
 } Level;
 
 typedef struct
 {
   U32 seed;
-  U32 cameraX;
-
-  AnimatedSpriteObject player;
-  Point velocity;
 } Game;
 
 Game*      GAME;
@@ -196,6 +211,43 @@ U32  Random(U32* seed)
   return (*seed);
 }
 
+int GetTile(U8 section, U32 x, U32 y)
+{
+  if (section >= SECTIONS_PER_LEVEL)
+    return -1;
+
+  U32 offset = x + (y * SECTION_WIDTH);
+  
+  if (offset >= (SECTION_WIDTH * SECTION_HEIGHT))
+    return -1;
+
+  Section* s = &LEVEL->sections[section];
+  SectionData* d = SECTION_DATA[s->sectionId];
+
+  return d->level[offset];
+}
+
+void ScreenPos_ToTilePos(S32 x, S32 y, U8* id, U8* tileX, U8* tileY)
+{
+
+  for (U32 i=0;i < SECTIONS_PER_LEVEL;i++)
+  {
+    Section* section = &LEVEL->sections[i];
+
+    if (x >= section->x0 && x <= section->x1)
+    {
+      (*id) = i;
+
+      S32 tx = (x - section->x0);
+      (*tileX) = tx / TILE_SIZE;
+      (*tileY) = y / TILE_SIZE;
+
+      // printf("%i / %f\n", tx, (float) tx / (float)(SECTION_WIDTH * TILE_SIZE));
+      return;
+    }
+  }
+}
+
 void MoveSection(Level* level, U8 from, U8 to)
 {
   memcpy(&level->sections[to], &level->sections[from], sizeof(Section));
@@ -203,11 +255,24 @@ void MoveSection(Level* level, U8 from, U8 to)
 
 void MakeSection(Section* section, U32 seed)
 {
+  // find highest x1, that becomes x0
+  S32 x0=0, x1 = 0;
+  for (U32 i=0;i < SECTIONS_PER_LEVEL;i++)
+  {
+    Section* s = &LEVEL->sections[i];
+    if (s->x1 > x0)
+      x0 = s->x1;
+  }
+
+  x1 = x0 + (SECTION_WIDTH * TILE_SIZE);
+
   memset(section, 0, sizeof(Section));
   section->seed = seed;
   section->id = LEVEL->nextSectionId++;
+  section->x0 = x0;
+  section->x1 = x1;
 
-  if (section->id < 3)
+  if (section->id < 1)
   {
     section->sectionId = 0;
   }
@@ -226,11 +291,13 @@ void PushSection(Level* level, U32 seed)
   }
 
   MakeSection(&level->sections[(SECTIONS_PER_LEVEL - 1)], seed);
-
 }
 
-void DrawSection(Section* section, S32 xOffset)
+void DrawSection(Section* section, int idx)
 {
+
+  S32 xOffset = section->x0;
+
   for(S32 i=0;i < SECTION_WIDTH;i++)
   {
     for (S32 j=0;j < SECTION_HEIGHT;j++)
@@ -244,7 +311,7 @@ void DrawSection(Section* section, S32 xOffset)
       }
     }
   }
-  Canvas_PrintF(xOffset, 10, &FONT_NEOSANS, 15, "%i:%i", section->id, section->sectionId);
+  Canvas_PrintF(xOffset, 10, &FONT_NEOSANS, 15, "%i/%i:%i", section->id, idx, section->sectionId);
 }
 
 void PushLevel(U32 seed)
@@ -258,9 +325,14 @@ void PushLevel(U32 seed)
     MakeSection(&LEVEL->sections[i], Random(&LEVEL->seed));
   }
 
-  printf("%i", LEVEL->sections[0].sectionId);
-
   // TODO: Build player here.
+
+  AnimatedSpriteObject_Make(&LEVEL->player, &ANIMATEDSPRITE_QUOTE_WALK, Canvas_GetWidth() / 2, Canvas_GetHeight() / 2);
+  AnimatedSpriteObject_PlayAnimation(&LEVEL->player, true, true);
+
+  LEVEL->player.x = 48;
+  LEVEL->player.y = 48;
+
   // TODO: Build cat player here.
 }
 
@@ -270,15 +342,25 @@ void PopLevel()
   LEVEL = NULL;
 }
 
+void DrawTile(U8 id, U32 x, U32 y, U8 tile)
+{
+  int of = LEVEL->sections[id].x0;
+  int cx = x * TILE_SIZE;
+  int cy = y * TILE_SIZE;
+
+  Splat_Tile(&TILES1, of + cx, cy, TILE_SIZE, tile);
+}
+
 void DrawLevel()
 {
-  S32 offset = GAME->cameraX % (SECTION_WIDTH * TILE_SIZE * 2);
-
   for (U32 i=0;i < SECTIONS_PER_LEVEL;i++)
   {
-    DrawSection(&LEVEL->sections[i], -offset + (i * (SECTION_WIDTH * TILE_SIZE)));
+    DrawSection(&LEVEL->sections[i], i);
   }
 
+  // Debug Selected Foot.
+  DrawTile(LEVEL->feetId, LEVEL->feetX, LEVEL->feetY, 1);
+  DrawTile(LEVEL->frontId, LEVEL->frontX, LEVEL->frontY, 1);
 }
 
 void Init(Settings* settings)
@@ -289,6 +371,8 @@ void Init(Settings* settings)
   Input_BindKey(SDL_SCANCODE_SPACE, AC_JUMP);
   Input_BindKey(SDL_SCANCODE_LSHIFT, AC_RAGDOLL);
   Input_BindKey(SDL_SCANCODE_R, AC_RESET);
+  Input_BindKey(SDL_SCANCODE_A, AC_DEBUG_LEFT);
+  Input_BindKey(SDL_SCANCODE_D, AC_DEBUG_RIGHT);
 
   Font_Load("NeoSans.png", &FONT_NEOSANS, Colour_Make(0,0,255), Colour_Make(255,0,255));
   Bitmap_Load("cave.png", &SPRITESHEET, 0);
@@ -317,9 +401,6 @@ void Start()
   GAME = Scope_New(Game);
   GAME->seed = 1;
 
-  //AnimatedSpriteObject_Make(&game->player, &ANIMATEDSPRITE_QUOTE_WALK, Canvas_GetWidth() / 2, Canvas_GetHeight() / 2);
-  //AnimatedSpriteObject_PlayAnimation(&game->player, true, true);
-
   // Music_Play("origin.mod");
 }
 
@@ -334,24 +415,70 @@ void Step()
   {
     PushLevel(Random(&GAME->seed));
   }
-  
-  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%i", GAME->cameraX);
+
+  if (Input_GetActionDown(AC_DEBUG_LEFT))
+  {
+    LEVEL->player.x-=4;
+  }
+
+  if (Input_GetActionDown(AC_DEBUG_RIGHT))
+  {
+    LEVEL->player.x+=4;
+  }
+
+  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "Feet=%i@%i,%i  Front=%i@%i,%i=%i", 
+  LEVEL->feetId, LEVEL->feetX, LEVEL->feetY, 
+  LEVEL->frontId, LEVEL->frontX, LEVEL->frontY, LEVEL->frontTile);
 
   // Generate new section on boundary.
-  for (int i=0;i < 8;i++)
+  for (int i=0;i < 1;i++)
   {
-    GAME->cameraX++;
-
-    S32 y = (SECTION_WIDTH * TILE_SIZE);
-    S32 x = GAME->cameraX % y;
-    if (x == 0)
+    for (U32 k=0;k < SECTIONS_PER_LEVEL;k++)
     {
-      GAME->cameraX -= y;
-      PushSection(LEVEL, Random(&LEVEL->seed));
+      Section* section = &LEVEL->sections[k];
+      section->x0--;
+      section->x1 = section->x0 + (SECTION_WIDTH * TILE_SIZE);
+
+      if (section->x1 <= 0)
+      {
+        section->x0 = 0;
+        section->x1 = 0;
+        MakeSection(section, Random(&LEVEL->seed));
+      }
     }
   }
 
+  // Find feet pos.
+  ScreenPos_ToTilePos(LEVEL->player.x, LEVEL->player.y + 16, &LEVEL->feetId, &LEVEL->feetX, &LEVEL->feetY);
+  ScreenPos_ToTilePos(LEVEL->player.x + 16, LEVEL->player.y, &LEVEL->frontId, &LEVEL->frontX, &LEVEL->frontY);
+
+  LEVEL->feetTile = GetTile(LEVEL->feetId, LEVEL->feetX, LEVEL->feetY);
+  LEVEL->frontTile = GetTile(LEVEL->frontId, LEVEL->frontX, LEVEL->frontY);
+  
+  // Apply gravity
+  if (LEVEL->feetTile <= 0)
+  {
+    LEVEL->player.y += 4;
+  }
+
   DrawLevel();
+
+  Canvas_PlaceAnimated(&LEVEL->player, true);
+
+  // Out of bounds death
+  if (LEVEL->player.y >= RETRO_CANVAS_DEFAULT_HEIGHT)
+  {
+    PopLevel();
+  }
+
+  // Detect Front collisions (rough)
+  if (LEVEL->frontTile > 0)
+  {
+    // @TODO Nice collision box to tile collision function here.
+    PopLevel();
+  }
+
+  //AnimatedSpriteObject(&GAME->player, true, true);
 
   //Canvas_Splat(&TILES1, 0, 0, NULL);
   Canvas_Debug(&FONT_NEOSANS);
