@@ -288,7 +288,7 @@ typedef struct
   U32 nextSectionId;
   Object  playerObjects[1 + MAX_CATS]; // 0 = Player, 1+ = Cats
   Section sections[SECTIONS_PER_LEVEL];
-  S32 camera, centreX, catCentreMin, catCentreMax;
+  S32 camera, catCentre, catCentreMin, catCentreMax;
   U32 jumpCount;
 } Level;
 
@@ -843,9 +843,9 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
   {
     if (isPlayer)
     {
-      if (playerObject->x > LEVEL->catCentreMax)
+      if (playerObject->x > LEVEL->catCentre)
         playerObject->x -= 2;
-      else if (playerObject->x < LEVEL->catCentreMin)
+      else if (playerObject->x < LEVEL->catCentre)
         playerObject->x += 2;
       else
         playerObject->x++;
@@ -875,6 +875,13 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
     isAlive = false;
   }
 
+  S32 k = (playerObject->x - LEVEL->camera);
+  if (isAlive && (playerObject->x - LEVEL->camera) < -playerObject->w)
+  {
+    printf("Left behind! k=%i x=%i cam=%i\n", k, playerObject->x, LEVEL->camera);
+    isAlive = false;
+  }
+
   // Front Collision check
   if (isAlive && !isPlayer && playerObject->front.tile > 0)
   {
@@ -893,39 +900,36 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
 
 void CalculateCentreX()
 {
-  LEVEL->centreX = 0;
+  LEVEL->catCentre = 0;
   LEVEL->catCentreMin = 10000000;
   LEVEL->catCentreMax = -10000000;
-  S32 count = 0;
 
-  for (U32 i=0;i < (MAX_CATS + 1);i++)
+  for (U32 i=1;i < (MAX_CATS + 1);i++)
   {
     Object* playerObject = &LEVEL->playerObjects[i];
     if (!playerObject->alive)
       continue;
 
-    LEVEL->centreX += playerObject->x;
-    
-    if (i > 0)
+
+    int sx = playerObject->x - LEVEL->camera;
+    if (sx > 0)
     {
       if (playerObject->x < LEVEL->catCentreMin)
         LEVEL->catCentreMin = playerObject->x;
       else if (playerObject->x > LEVEL->catCentreMax)
         LEVEL->catCentreMax = playerObject->x;
     }
-    count++;
+    
   }
 
-  if (LEVEL->centreX != 0 && count != 0)
-  {
-    LEVEL->centreX /= count;
-  }
+  LEVEL->catCentre = LEVEL->catCentreMin + (LEVEL->catCentreMax - LEVEL->catCentreMin) / 2;
+  
 }
 
 void UpdateCamera()
 {
   CalculateCentreX();
-  LEVEL->camera = LEVEL->centreX - FOCUS_X;
+  LEVEL->camera = LEVEL->catCentre - FOCUS_X;
 }
 
 void Step()
@@ -941,11 +945,6 @@ void Step()
 
   if (scope == 'LEVL')
   {
-
-    if (Input_GetActionReleased(AC_RESET))
-    {
-      PopLevel();
-    }
 
     UpdateCamera();
 
