@@ -790,9 +790,9 @@ void ScanJump(Object* obj, U32 maxLength)
       else
       {
         DrawJump(&obj->testJump, 210, 125, 44);
-      }
+        obj->testJump.valid = true;
 
-      obj->testJump.valid = true;
+      }
 
       return;
     }
@@ -819,6 +819,24 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
   // Jumping
   if (playerObject->isJumping)
   {
+    // @Hack
+    // To prevent bad jumps. It seems to be occuring to an old test jump is being marked as valid, whilst a current jump isn't available.
+    // This just checks to see if the startX < x when time is 0.
+    if (playerObject->x < playerObject->jump.jsX && playerObject->jump.jT == 0)
+    {
+      playerObject->isJumping = false;
+
+      playerObject->jump.jT = playerObject->jump.jTStop;
+      playerObject->jump.valid = false;
+      printf("Bad jump!");
+      goto walk;
+    }
+
+    S32 lx = playerObject->x;
+    S32 ly = playerObject->y;
+
+    S32 k = (playerObject->x - LEVEL->camera);
+
     S32 x, y;
     jumpCurve(&playerObject->jump, playerObject->jump.jT, &x, &y);
     playerObject->jump.jlX = playerObject->x;
@@ -828,6 +846,11 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
 
     playerObject->x = x;
     playerObject->y = y;
+
+    if (isPlayer && (playerObject->x - LEVEL->camera) < -playerObject->w)
+    {
+      printf("BREAK!");
+    }
 
     playerObject->jump.jT++;
     
@@ -842,31 +865,15 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
   }
   else
   {
-    if (isPlayer)
-    {
-      if (playerObject->x > LEVEL->catCentre)
-        playerObject->x -= 2;
-      else if (playerObject->x < LEVEL->catCentre)
-        playerObject->x += 2;
-      else
-        playerObject->x++;
-    }
+    walk:
+
+    if (playerObject->x > LEVEL->catCentre + 10)
+      playerObject->x -= (LEVEL->speed + 1);
+    else if (playerObject->x < LEVEL->catCentre - 10)
+      playerObject->x += (LEVEL->speed + 1);
     else
-    {
-      if (reduce)
-      {
-        if (playerObject->x > catCentre)
-          playerObject -= 2;
-        else if (playerObject->x < catCentre)
-          playerObject += 2;
-        else
-          playerObject->x++;
-      }
-      else
-      {
-        playerObject->x++;
-      }
-    }
+      playerObject->x += LEVEL->speed;
+
   }
 
   // Out of bounds check
@@ -883,17 +890,22 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
     isAlive = false;
   }
 
-  // Front Collision check
-  if (isAlive && !isPlayer && playerObject->front.tile > 0)
-  {
-    // @TODO Better collisions
-    printf("Front collision\n");
-    isAlive = false;
-  }
+//  // Front Collision check
+//  if (isAlive && !isPlayer && playerObject->front.tile > 0)
+//  {
+//    // @TODO Better collisions
+//    printf("Front collision\n");
+//    isAlive = false;
+//  }
 
   if (isAlive == false)
   {
-    printf("Cat died\n");
+
+    if (isPlayer)
+    {
+      printf("break\n");
+    }
+    printf("Object died, Player = %i\n", isPlayer);
   }
 
   return isAlive;
@@ -913,7 +925,10 @@ void CalculateCentreX()
       continue;
 
 
-    int sx = playerObject->x - LEVEL->camera;
+    //int sx = playerObject->x - LEVEL->camera;
+
+    int sx = playerObject->x;
+    
     LEVEL->catCount++;
     if (sx > 0)
     {
@@ -961,7 +976,7 @@ void Step()
 
       if (section->w1 <= 0)
       {
-        printf("%i => %i (Out of bounds)\n", k, section->x1);
+        printf("Section:%i => %i (Out of bounds)\n", k, section->x1);
         section->x0 = 0;
         section->x1 = 0;
         MakeSection(section, Random(&LEVEL->seed));
@@ -1013,6 +1028,12 @@ void Step()
     return;
   }
 
+  if (LEVEL->camera % 1000 == 0)
+  {
+    LEVEL->speed++;
+  }
+
+  // printf("P: %i R: %i D: %i\n", Input_GetActionPressed(AC_JUMP), Input_GetActionReleased(AC_JUMP), Input_GetActionDown(AC_JUMP));
 
   if (Input_GetActionPressed(AC_JUMP))
   {
@@ -1037,7 +1058,6 @@ void Step()
 
       if (playerObject->jumpStrength < 60)
         playerObject->jumpStrength += 2;
-
     }
   }
 
@@ -1132,66 +1152,6 @@ void Step()
       SDL_RenderDrawLine(gRenderer, leashX0 - LEVEL->camera, leashY0, leashX1 - LEVEL->camera, leashY1);
       SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
     }
-
-    #if DEBUG_ARC == 1
-    if (playerObject->isJumping)
-    {
-      //DrawJump(&playerObject->jump, 0x55, 0xFF, 0x55);
-      //DrawJump(&playerObject->testJump, 0xFF, 0x55, 0x55);
-    }
-    #endif
-
-    #if DEBUG_TILES == 1
-    S32 debugX = LEVEL->sections[playerObject->diag.id].w0 + (playerObject->diag.x * TILE_SIZE);
-    S32 debugY = (playerObject->diag.y * TILE_SIZE);
-
-    if (playerObject->diag.tile <= 0)
-      SDL_SetRenderDrawColor(gRenderer, 0x55, 0x55, 0x55, 0xFF);
-    else
-      SDL_SetRenderDrawColor(gRenderer, 0x55, 0xFF, 0x55, 0xFF);
-    
-    SDL_RenderDrawLine(gRenderer, debugX, debugY, debugX + TILE_SIZE, debugY + TILE_SIZE);
-
-    SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-
-
-    debugX = LEVEL->sections[playerObject->feet.id].w0 + (playerObject->feet.x * TILE_SIZE);
-    debugY = (playerObject->feet.y * TILE_SIZE);
-
-    if (playerObject->feet.tile <= 0)
-      SDL_SetRenderDrawColor(gRenderer, 0x55, 0x55, 0x55, 0xFF);
-    else
-      SDL_SetRenderDrawColor(gRenderer, 0x55, 0xFF, 0x55, 0xFF);
-
-    SDL_RenderDrawLine(gRenderer, debugX, debugY, debugX + TILE_SIZE, debugY);
-
-    SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-
-    debugX = LEVEL->sections[playerObject->front.id].w0 + (playerObject->front.x * TILE_SIZE);
-    debugY = (playerObject->front.y * TILE_SIZE);
-
-    if (playerObject->front.tile <= 0)
-      SDL_SetRenderDrawColor(gRenderer, 0x55, 0x55, 0x55, 0xFF);
-    else
-      SDL_SetRenderDrawColor(gRenderer, 0x55, 0xFF, 0x55, 0xFF);
-
-    SDL_RenderDrawLine(gRenderer, debugX, debugY, debugX, debugY + TILE_SIZE);
-
-    SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-
-    debugX = LEVEL->sections[playerObject->scan.id].w0 + (playerObject->scan.x * TILE_SIZE);
-    debugY = (playerObject->scan.y * TILE_SIZE);
-
-    if (playerObject->scan.tile <= 0)
-      SDL_SetRenderDrawColor(gRenderer, 0x55, 0x55, 0x55, 0xFF);
-    else
-      SDL_SetRenderDrawColor(gRenderer, 0x55, 0xFF, 0x55, 0xFF);
-
-    SDL_RenderDrawLine(gRenderer, debugX + TILE_SIZE, debugY, debugX, debugY + TILE_SIZE);
-
-    SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-
-    #endif
   }
 
   U32 score = (LEVEL->camera * 5) + (LEVEL->jumpCount * 10);
@@ -1200,7 +1160,7 @@ void Step()
 
   for (U32 i=0;i < LEVEL->catCount;i++)
   {
-    Splat_Tile(&TILES1, i * 14, 9, 16, 0xFF);
+    Splat_Tile(&TILES1, i * 14, 9, 16, 239);
   }
 
   // Out of cats death

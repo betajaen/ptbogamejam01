@@ -1,0 +1,29 @@
+Bugs:
+
+1. Sometimes you hit an invisible wall, and all die.
+	a. Sometimes I can't hold down jump when this happens?
+		Left behind! k=-126 x=512 cam=638
+		Object died, Player = 0
+		
+	Looks like it dies because it's out of bounds.
+
+	Left behind! k=-119 x=522 cam=641
+
+	Seems to be related to not being able to jump, then it crashes afterwards. Or seems to crash after releasing jump key.
+	But no curves appear.
+
+2. Sometimes it goes to a blue screen.
+	a.  I got it when I couldn't hold down jump
+
+3. 
+    int sx = playerObject->x - LEVEL->camera;
+
+	Looks wrong. it's in world coords, not screen coords.
+
+
+TODO:
+
+Player pickups; maybe something simple - as player front tile = 239, then do it- and then have a timer for 4 seconds to have another.
+maybe only show the tile on random? dunno. Could store this in the section, and use the seed to determine if it's a cat or not.
+
+Cats should spread out more, maybe just use their index around the centre?
