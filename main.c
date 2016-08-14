@@ -141,6 +141,9 @@ void LoadSectionData()
   U32 dataSize;
   char* data = TextFile_Load("sections.tmx", &dataSize);
   
+  if (data == NULL)
+    printf("Bad text file\n");
+
   while(*data != 0)
   {
     char* t;
@@ -455,7 +458,7 @@ void AddPlayerCat()
       Object* cat = &LEVEL->playerObjects[i];
 
       cat->w = 16;
-      cat->h = 5;
+      cat->h = 13;
       cat->alive = true;
 
       AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT_WALK, player->x, player->y);

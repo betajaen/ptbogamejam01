@@ -202,9 +202,9 @@ char* TextFile_Load(const char* name, U32* outSize)
 #elif defined(RETRO_BROWSER)
   RETRO_MAKE_BROWSER_PATH(name);
   FILE* f = fopen(RETRO_BROWSER_PATH, "rb");
-  fseek(f, SEEK_END, 0);
+  fseek(f, 0, SEEK_END);
   int s = ftell(f);
-  fseek(f, SEEK_SET, 0);
+  fseek(f, 0, SEEK_SET);
 
   data = (char*) malloc(s + 1);
   fread(data, s, 1, f);
@@ -213,8 +213,9 @@ char* TextFile_Load(const char* name, U32* outSize)
   data[s] = 0;
   (*outSize) = s;
 
-#endif
+  printf("%i, %s\n", s, data);
 
+#endif
 
   return data;
 }
