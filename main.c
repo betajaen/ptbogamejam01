@@ -770,7 +770,7 @@ void ScanJump(Object* obj, U32 maxLength)
         by *= TILE_SIZE;
 
         CollisionTest(tx, by, obj->w, obj->h, &obj->scan2);
-        if (obj->scan2.tile > 0)
+        if (obj->scan2.tile >= 1 && obj->scan2.tile <= 16)
           break;
       }
 
@@ -791,7 +791,6 @@ void ScanJump(Object* obj, U32 maxLength)
       {
         DrawJump(&obj->testJump, 210, 125, 44);
         obj->testJump.valid = true;
-
       }
 
       return;
@@ -808,11 +807,22 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
   bool didSomething = false;
 
   // In air - Gravity
-  if (playerObject->feet.tile <= 0)
+  if ( !(playerObject->feet.tile >= 1 && playerObject->feet.tile <= 16) )
   {
     if (!playerObject->isJumping)
     {
-      playerObject->y += 4;
+        playerObject->y += 4;
+    }
+  }
+  else
+  { 
+    if (!playerObject->isJumping)
+    {
+      S32 fy = playerObject->feet.y * TILE_SIZE;
+      if (playerObject->y + playerObject->h > fy)
+      {
+        playerObject->y = fy - playerObject->h;
+      }
     }
   }
 
