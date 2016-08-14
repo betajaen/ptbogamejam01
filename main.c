@@ -17,7 +17,7 @@
 #define MAX_OBJECTS_PER_SECTION 16
 #define SECTIONS_PER_LEVEL (4)
 
-#define DEBUG_TILES 1
+#define DEBUG_TILES 0
 #define DEBUG_ARC 1
 #define DEBUG_SCAN 1
 
@@ -36,6 +36,7 @@ void Splat_Tile(Bitmap* bitmap, S32 x, S32 y, S32 s, U32 index)
 {
   SDL_Rect src, dst;
   
+
   if (index == 0)
   {
     src.x = 0;
@@ -43,8 +44,8 @@ void Splat_Tile(Bitmap* bitmap, S32 x, S32 y, S32 s, U32 index)
   }
   else
   {
-    src.x = (bitmap->w) / (index * s);
-    src.y = (bitmap->h) % (index * s);
+    src.x = (index % 16) * s;
+    src.y = (index / 16) * s;
   }
 
   src.w = s;
@@ -79,7 +80,8 @@ typedef enum
 
 typedef struct
 {
-  U8  level[SECTION_WIDTH * SECTION_HEIGHT];
+  U8  col[SECTION_WIDTH * SECTION_HEIGHT];
+  U8  non[SECTION_WIDTH * SECTION_HEIGHT];
 } SectionData;
 
 SectionData* SECTION_DATA[256];
@@ -148,14 +150,24 @@ void LoadSectionData()
         U32 v = 0;
         data = readUInt(data, &v);
         data = skipToDigit(data);
-        section->level[i] = v;
+
+        if (v < 128)
+        {
+          section->col[i] = v;
+          section->non[i] = 0;
+        }
+        else
+        {
+          section->col[i] = 0;
+          section->non[i] = 0;
+        }
       }
 
       for(U32 j=0;j < (SECTION_HEIGHT); j++)
       {
         for(U32 i=0;i < (SECTION_WIDTH); i++)
         {
-          printf("%i,", section->level[i + (j * SECTION_WIDTH)]);
+          printf("%i,", section->col[i + (j * SECTION_WIDTH)]);
         }
         printf("\n");
       }
@@ -215,6 +227,7 @@ typedef struct
   U32 nextSectionId;
   Object  playerObjects[1 + MAX_CATS]; // 0 = Player, 1+ = Cats
   Section sections[SECTIONS_PER_LEVEL];
+  S32     centreX;
 } Level;
 
 typedef struct
@@ -254,7 +267,7 @@ int GetTile(U8 section, U32 x, U32 y)
   Section* s = &LEVEL->sections[section];
   SectionData* d = SECTION_DATA[s->sectionId];
 
-  return d->level[offset];
+  return d->col[offset];
 }
 
 void ScreenPos_ToTilePos(S32 x, S32 y, U8* id, U8* tileX, U8* tileY)
@@ -409,7 +422,7 @@ void DrawSection(Section* section, int idx)
     {
       SectionData* data = SECTION_DATA[section->sectionId];
 
-      U8 index = data->level[i + (j * SECTION_WIDTH)];
+      U8 index = data->col[i + (j * SECTION_WIDTH)];
       if (index > 0)
       {
         Splat_Tile(&TILES1, xOffset + (i * TILE_SIZE), (j * TILE_SIZE), TILE_SIZE, index - 1);
@@ -479,6 +492,7 @@ void PopLevel()
 {
   Scope_Pop();
   LEVEL = NULL;
+  printf("Level Reset");
 }
 
 void DrawTile(U8 id, U32 x, U32 y, U8 tile)
@@ -521,11 +535,12 @@ void Init(Settings* settings)
   Sound_Load(&SOUND_COIN, "coin.wav");
 
   Bitmap_Load("tiles1.png", &TILES1, 16);
+  
 }
 
 void Start()
 {
-  // This is 'different' from the game memory, it's more of a RAM, so it shouldn't be part of the Arena mem.
+  // This is 'different' from the game memory, it's more of a ROM, so it shouldn't be part of the Arena mem.
   for (int i=0; i < 256;i++)
   {
     SectionData* data = malloc(sizeof(SectionData));
@@ -539,6 +554,8 @@ void Start()
   GAME = Scope_New(Game);
   GAME->seed = 1;
 
+
+  Canvas_SetFlags(0, CNF_Render | CNF_Clear, 8);
   // Music_Play("origin.mod");
 }
 
@@ -622,8 +639,6 @@ bool LimitJump(Object* obj, Jump* jump)
 
     CollisionTest(x, y, obj->w, obj->h, &obj->scan2);
 
-    SDL_RenderDrawLine(gRenderer, obj->scan2.sx, obj->scan2.sy, obj->scan2.sx + TILE_SIZE, obj->scan2.sy + TILE_SIZE);
-
     if (obj->scan2.tile > 0)
     {
       jump->jTStop = k;
@@ -641,8 +656,6 @@ bool IsJumpClear(Object* obj, Jump* jump)
     jumpCurve(jump, k, &x, &y);
 
     CollisionTest(x, y, obj->w, obj->h, &obj->scan2);
-
-    SDL_RenderDrawLine(gRenderer, obj->scan2.sx, obj->scan2.sy, obj->scan2.sx + TILE_SIZE, obj->scan2.sy + TILE_SIZE);
 
     if (obj->scan2.tile > 0)
     {
@@ -678,7 +691,7 @@ void ScanJump(Object* obj, U32 maxLength)
       int tx = ox + (cos(deltaOffset + (delta * i)) * length);
       int ty = oy + (sin(deltaOffset + (delta * i)) * length);
       int by = 0;
-
+      
       for (int k=0;k < SECTION_HEIGHT;k++)
       {
         by = (ty / TILE_SIZE) + k;
@@ -689,27 +702,19 @@ void ScanJump(Object* obj, U32 maxLength)
           break;
       }
 
-
-      SDL_RenderDrawLine(gRenderer, ox, oy, tx, ty);
-      SDL_RenderDrawLine(gRenderer, tx, ty, tx, by);
+      // SDL_RenderDrawLine(gRenderer, ox, oy, tx, ty);
+      // SDL_RenderDrawLine(gRenderer, tx, ty, tx, by);
 
       CollisionTest(tx, by, obj->w, obj->h, &obj->scan);
 
       CalculateJump(obj, &obj->testJump);
 
-      LimitJump(obj, &obj->testJump);
-
-//      if (IsJumpClear(obj, &obj->testJump) == false)
-//      {
-//        break;
-//      }
+      if (LimitJump(obj, &obj->testJump))
+      {
+        
+      }
 
       DrawJump(&obj->testJump, 0x00, 0x00, 0xFF);
-
-      S32 scanX, scanY;
-      TilePos_ToScreenPos(obj->scan2.id, obj->scan2.x, obj->scan2.y, &scanX, &scanY);
-
-      SDL_RenderDrawLine(gRenderer, scanX + TILE_SIZE / 2 - 2, scanY + TILE_SIZE, scanX + TILE_SIZE / 2 + 4, scanY + TILE_SIZE);
 
       obj->testJump.valid = true;
 
@@ -728,31 +733,6 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
   // In air - Gravity
   if (playerObject->feet.tile <= 0)
   {
-  #if 0
-    // Holding jump over edge
-    if (playerObject->wantsToJump && playerObject->jumpTime > 10)
-    {
-      if (playerObject->jumpTime > MAX_JUMP_TIME)
-        playerObject->jumpTime = MAX_JUMP_TIME;
-
-      playerObject->isJumping = true;
-      playerObject->wantsToJump = false; 
-      playerObject->jumpForward += 4;
-    }
-
-    if (playerObject->isJumping && playerObject->jumpTime <= 0)
-    {
-      playerObject->sprite.y += 4;
-      playerObject->isJumping = false;
-
-      if (playerObject->forwardFalling)
-      {
-        playerObject->sprite.x += 1;
-      }
-
-    }
-    else 
-    #endif
     if (!playerObject->isJumping)
     {
       playerObject->sprite.y += 4;
@@ -873,9 +853,7 @@ void Step()
         continue;
 
       if (playerObject->jumpStrength < 60)
-        playerObject->jumpStrength++;
-
-      printf("%i\n", playerObject->jumpStrength);
+        playerObject->jumpStrength += 2;
 
     }
   }
@@ -885,8 +863,17 @@ void Step()
     Object* playerObject = &LEVEL->playerObjects[i];
     if (!playerObject->alive)
       continue;
+    
+    if (playerObject->wantsToJump)
+    {
+      S32 bonus = 0;
+      if (playerObject->feet.tile <= 0)
+      {
+        bonus = TILE_SIZE * LEVEL->speed;
+      }
 
-    ScanJump(playerObject, (TILE_SIZE * 8) + (playerObject->jumpStrength * TILE_SIZE));
+      ScanJump(playerObject, (TILE_SIZE * 4) + playerObject->jumpStrength + bonus);
+    }
   }
 
   for (U32 i=0;i < (MAX_CATS + 1);i++)
@@ -895,15 +882,13 @@ void Step()
     if (!playerObject->alive  || playerObject->isJumping)
       continue;
 
-    if (Input_GetActionReleased(AC_JUMP) || (playerObject->wantsToJump && playerObject->diag.tile <= 0))
+    if (Input_GetActionReleased(AC_JUMP) || (playerObject->wantsToJump && playerObject->feet.tile <= 0))
     {
-      
-      printf("%i\n", playerObject->jumpStrength);
-
       if (playerObject->testJump.valid)
       {
         playerObject->isJumping = true;
         playerObject->wantsToJump = false;
+        playerObject->jumpStrength = 0;
 
         playerObject->jump = playerObject->testJump;
       }
