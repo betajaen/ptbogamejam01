@@ -337,6 +337,8 @@ void  Canvas_DrawFilledRectangle(U8 Colour, Rect rect);
 
 void  Canvas_PrintF(U32 x, U32 y, Font* font, U8 colour, const char* fmt, ...);
 
+S32  Canvas_LengthF(Font* font, const char* fmt, ...);
+
 typedef enum
 {
   // 1

@@ -1056,6 +1056,44 @@ void Canvas_PrintStr(U32 x, U32 y, Font* font, U8 colour, const char* str)
 
 }
 
+S32 Canvas_LengthStr(Font* font, const char* str)
+{
+  assert(font);
+  assert(str);
+
+  SDL_Rect s, d;
+  s.x = 0;
+  s.y = 0;
+  s.w = 0;
+  s.h = font->height;
+  d.x = 0;
+  d.y = 0;
+  d.w = 0;
+  d.h = s.h; 
+
+  while(true)
+  {
+    U8 c = *str++;
+
+    if (c == 0x0)
+      break;
+
+    if (c == ' ')
+    {
+      d.x += font->widths[' '];
+      continue;
+    }
+
+    s.x = font->x[c];
+    s.w = font->widths[c];
+    d.w = s.w;
+
+    d.x += d.w;
+  }
+
+  return d.x;
+}
+
 void Canvas_PrintF(U32 x, U32 y, Font* font, U8 colour, const char* fmt, ...)
 {
   assert(font);
@@ -1066,6 +1104,18 @@ void Canvas_PrintF(U32 x, U32 y, Font* font, U8 colour, const char* fmt, ...)
   va_end(args);
 
   Canvas_PrintStr(x, y, font, colour, gFmtScratch);
+}
+
+S32 Canvas_LengthF(Font* font, const char* fmt, ...)
+{
+  assert(font);
+  assert(fmt);
+  va_list args;
+  va_start(args, fmt);
+  vsprintf(gFmtScratch, fmt, args);
+  va_end(args);
+
+  return Canvas_LengthStr(font, gFmtScratch);
 }
 
 void Canvas_SetPresentation(FramePresentation presentation, float alpha, float beta)

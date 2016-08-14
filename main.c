@@ -69,6 +69,7 @@ void Init(Settings* settings)
   Input_BindKey(SDL_SCANCODE_SPACE, AC_JUMP);
   Input_BindKey(SDL_SCANCODE_LSHIFT, AC_RAGDOLL);
   Input_BindKey(SDL_SCANCODE_R, AC_RESET);
+  Input_BindKey(SDL_SCANCODE_RETURN, AC_CONFIRM);
   Input_BindKey(SDL_SCANCODE_A, AC_DEBUG_LEFT);
   Input_BindKey(SDL_SCANCODE_D, AC_DEBUG_RIGHT);
 
@@ -288,6 +289,7 @@ typedef struct
   Object  playerObjects[1 + MAX_CATS]; // 0 = Player, 1+ = Cats
   Section sections[SECTIONS_PER_LEVEL];
   S32 camera, centreX, catCentreMin, catCentreMax;
+  U32 jumpCount;
 } Level;
 
 typedef struct
@@ -930,48 +932,85 @@ void Step()
 {
   bool sfxJump = false, sfxHurt = false, sfxPickup = false;
 
-  if (Input_GetActionReleased(AC_RESET))
-  {
-    PopLevel();
-  }
+  int scope = Scope_GetName();
 
   if (LEVEL == NULL)
   {
     PushLevel(Random(&GAME->seed));
   }
 
-  LEVEL->frameMovementInput = 0;
-  if (Input_GetActionDown(AC_DEBUG_LEFT))
+  if (scope == 'LEVL')
   {
-    LEVEL->camera--;
-  }
 
-  if (Input_GetActionDown(AC_DEBUG_RIGHT))
-  {
-    LEVEL->camera++;
-  }
-
-  UpdateCamera();
-
-  // Generate new section on boundary.
-
-  for (U32 k=0;k < SECTIONS_PER_LEVEL;k++)
-  {
-    Section* section = &LEVEL->sections[k];
-    section->w0 = section->x0 - LEVEL->camera;
-    section->w1 = section->w0 + (SECTION_WIDTH * TILE_SIZE);
-
-    if (section->w1 <= 0)
+    if (Input_GetActionReleased(AC_RESET))
     {
-      printf("%i => %i (Out of bounds)\n", k, section->x1);
-      section->x0 = 0;
-      section->x1 = 0;
-      MakeSection(section, Random(&LEVEL->seed));
+      PopLevel();
     }
+
+    UpdateCamera();
+
+    // Generate new section on boundary.
+
+    for (U32 k=0;k < SECTIONS_PER_LEVEL;k++)
+    {
+      Section* section = &LEVEL->sections[k];
+      section->w0 = section->x0 - LEVEL->camera;
+      section->w1 = section->w0 + (SECTION_WIDTH * TILE_SIZE);
+
+      if (section->w1 <= 0)
+      {
+        printf("%i => %i (Out of bounds)\n", k, section->x1);
+        section->x0 = 0;
+        section->x1 = 0;
+        MakeSection(section, Random(&LEVEL->seed));
+      }
+    }
+
   }
-  
-  
+
   DrawLevel();
+
+  if (scope == 'DEAT')
+  {
+    int s = 40;
+    SDL_Rect r;
+    r.x = s;
+    r.y = s;
+    r.w = Canvas_GetWidth() - s * 2;
+    r.h = Canvas_GetHeight() - s * 2;
+
+    SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0x00, 0x00);
+    SDL_RenderFillRect(gRenderer, &r);
+
+    SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0x00, 0xFF);
+
+    SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    r.x--;
+    r.y--;
+    r.w+=2;
+    r.h+=2;
+    SDL_RenderDrawRect(gRenderer, &r);
+    
+    U32 score = (LEVEL->camera * 5) + (LEVEL->jumpCount * 10);
+
+    S32 gameoverLength = Canvas_LengthStr(&FONT_NEOSANS, "GAME OVER!");
+    S32 scoreLength =  Canvas_LengthF(&FONT_NEOSANS, "Score: %08d", score);
+    S32 instructionsLength = Canvas_LengthStr(&FONT_NEOSANS, "<RETURN> to play again");
+
+    Canvas_PrintStr(r.x + r.w / 2 - gameoverLength / 2, r.y + 4, &FONT_NEOSANS, 15, "GAME OVER!");
+    Canvas_PrintF(r.x + r.w / 2 - scoreLength / 2, r.y + r.h / 2 - 9, &FONT_NEOSANS, 15, "Score: %08d", score);
+
+    Canvas_PrintStr(r.x + r.w / 2 - instructionsLength / 2, r.y + r.h - 10, &FONT_NEOSANS, 15, "<RETURN> to play again");
+
+
+    if (Input_GetActionPressed(AC_CONFIRM))
+    {
+      Scope_Pop();
+      PopLevel();
+    }
+    return;
+  }
+
 
   if (Input_GetActionPressed(AC_JUMP))
   {
@@ -1167,6 +1206,7 @@ void Step()
 
   if (sfxJump)
   {
+    LEVEL->jumpCount++;
     Sound_Play(Random(&GAME->seed) % 2 == 0 ? &SOUND_JUMP1 : &SOUND_JUMP2, SDL_MIX_MAXVOLUME);
   } 
 
@@ -1183,7 +1223,7 @@ void Step()
   // Cats dead or player dead.
   if (!hasCats || !LEVEL->playerObjects[0].alive)
   {
-    PopLevel();
+    Scope_Push('DEAT');
   }
 
   //Canvas_Splat(&TILES1, 0, 0, NULL);
