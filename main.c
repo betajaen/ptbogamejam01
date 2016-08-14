@@ -673,16 +673,27 @@ void ScanJump(Object* obj, U32 maxLength)
   {
     // for(U32 j=1;j < lengthSteps;j++)
     {
-
-
       float length = maxLengthF; // maxLengthF - (lengthDelta * j);
 
       int tx = ox + (cos(deltaOffset + (delta * i)) * length);
       int ty = oy + (sin(deltaOffset + (delta * i)) * length);
+      int by = 0;
+
+      for (int k=0;k < SECTION_HEIGHT;k++)
+      {
+        by = (ty / TILE_SIZE) + k;
+        by *= TILE_SIZE;
+
+        CollisionTest(tx, by, obj->w, obj->h, &obj->scan2);
+        if (obj->scan2.tile > 0)
+          break;
+      }
+
 
       SDL_RenderDrawLine(gRenderer, ox, oy, tx, ty);
+      SDL_RenderDrawLine(gRenderer, tx, ty, tx, by);
 
-      CollisionTest(tx, ty, obj->w, obj->h, &obj->scan);
+      CollisionTest(tx, by, obj->w, obj->h, &obj->scan);
 
       CalculateJump(obj, &obj->testJump);
 
