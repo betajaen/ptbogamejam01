@@ -289,6 +289,7 @@ typedef struct
   Object  playerObjects[1 + MAX_CATS]; // 0 = Player, 1+ = Cats
   Section sections[SECTIONS_PER_LEVEL];
   S32 camera, catCentre, catCentreMin, catCentreMax;
+  U32 catCount;
   U32 jumpCount;
 } Level;
 
@@ -904,6 +905,7 @@ void CalculateCentreX()
   LEVEL->catCentreMin = 10000000;
   LEVEL->catCentreMax = -10000000;
 
+  LEVEL->catCount = 0;
   for (U32 i=1;i < (MAX_CATS + 1);i++)
   {
     Object* playerObject = &LEVEL->playerObjects[i];
@@ -912,18 +914,19 @@ void CalculateCentreX()
 
 
     int sx = playerObject->x - LEVEL->camera;
+    LEVEL->catCount++;
     if (sx > 0)
     {
       if (playerObject->x < LEVEL->catCentreMin)
         LEVEL->catCentreMin = playerObject->x;
       else if (playerObject->x > LEVEL->catCentreMax)
         LEVEL->catCentreMax = playerObject->x;
+
     }
     
   }
 
   LEVEL->catCentre = LEVEL->catCentreMin + (LEVEL->catCentreMax - LEVEL->catCentreMin) / 2;
-  
 }
 
 void UpdateCamera()
@@ -1113,15 +1116,14 @@ void Step()
   for (U32 i=0;i < (MAX_CATS + 1);i++)
   {
     Object* playerObject = &LEVEL->playerObjects[i];
-    if (!playerObject->alive)
-      continue;
-    
+
     playerObject->sprite.x = playerObject->x - LEVEL->camera;
     playerObject->sprite.y = playerObject->y;
+    
 
-    Canvas_PlaceAnimated(&playerObject->sprite, true);
+    Canvas_PlaceAnimated(&playerObject->sprite, playerObject->alive);
 
-    if (i > 0)
+    if (i > 0 && playerObject->alive)
     {
       S32 leashX1 = playerObject->x + 12;
       S32 leashY1 = playerObject->y + 4;
@@ -1190,6 +1192,15 @@ void Step()
     SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
 
     #endif
+  }
+
+  U32 score = (LEVEL->camera * 5) + (LEVEL->jumpCount * 10);
+
+  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%08d", score);
+
+  for (U32 i=0;i < LEVEL->catCount;i++)
+  {
+    Splat_Tile(&TILES1, i * 14, 9, 16, 0xFF);
   }
 
   // Out of cats death
