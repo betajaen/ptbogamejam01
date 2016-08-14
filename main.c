@@ -27,6 +27,7 @@
 
 static Font           FONT_NEOSANS;
 static Bitmap         SPRITESHEET;
+static Bitmap         CATSHEET;
 static Animation      ANIMATEDSPRITE_PLAYER_IDLE;
 static Animation      ANIMATEDSPRITE_PLAYER_WALK;
 static Animation      ANIMATEDSPRITE_CAT_IDLE;
@@ -283,7 +284,6 @@ void ScreenPos_ToTilePos(S32 x, S32 y, U8* id, U8* tileX, U8* tileY)
 
     if (lx >= section->x0 && lx < section->x1)
     {
-
       (*id) = i;
 
       S32 tx = (lx - section->x0);
@@ -541,12 +541,13 @@ void Init(Settings* settings)
 
   Font_Load("NeoSans.png", &FONT_NEOSANS, Colour_Make(0,0,255), Colour_Make(255,0,255));
   Bitmap_Load("cave.png", &SPRITESHEET, 0);
+  Bitmap_Load("cats.png", &CATSHEET, 16);
 
   Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_IDLE, &SPRITESHEET, 1, 100, 0, 80, 16, 16);
   Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_WALK, &SPRITESHEET, 4, 120, 0, 80, 16, 16);
 
-  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_IDLE, &SPRITESHEET, 1, 100, 0, 91, 16, 5);
-  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_WALK, &SPRITESHEET, 4, 120, 0, 91, 16, 5);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_IDLE, &CATSHEET, 1, 100, 0, 0, 16, 16);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_WALK, &CATSHEET, 3, 120, 0, 0, 16, 16);
 
   Sound_Load(&SOUND_COIN, "coin.wav");
 
