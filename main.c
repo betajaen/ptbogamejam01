@@ -21,6 +21,8 @@
 #define DEBUG_ARC 1
 #define DEBUG_SCAN 1
 
+#define FOCUS_X 48
+
 #include "retro.c"
 
 static Font           FONT_NEOSANS;
@@ -205,6 +207,7 @@ typedef struct
   Jump                 jump, testJump;
   CollisionPoint       feet, front, diag, scan, scan2;
   U8                   w, h;
+  S32                  x, y;
   bool                 alive;
 } Object;
 
@@ -213,7 +216,7 @@ typedef struct
   U32 seed, id;
   U8  sectionId;
   U8  objectCount;
-  S32 x0, x1;
+  S32 x0, x1, w0, w1;
   Object objects[MAX_OBJECTS_PER_SECTION];
 } Section;
 
@@ -227,7 +230,7 @@ typedef struct
   U32 nextSectionId;
   Object  playerObjects[1 + MAX_CATS]; // 0 = Player, 1+ = Cats
   Section sections[SECTIONS_PER_LEVEL];
-  S32     centreX;
+  S32 camera, centreX;
 } Level;
 
 typedef struct
@@ -272,16 +275,18 @@ int GetTile(U8 section, U32 x, U32 y)
 
 void ScreenPos_ToTilePos(S32 x, S32 y, U8* id, U8* tileX, U8* tileY)
 {
+  S32 lx = x; // - LEVEL->camera;
 
   for (U32 i=0;i < SECTIONS_PER_LEVEL;i++)
   {
     Section* section = &LEVEL->sections[i];
 
-    if (x >= section->x0 && x < section->x1)
+    if (lx >= section->x0 && lx < section->x1)
     {
+
       (*id) = i;
 
-      S32 tx = (x - section->x0);
+      S32 tx = (lx - section->x0);
       (*tileX) = tx / TILE_SIZE;
       (*tileY) = y / TILE_SIZE;
 
@@ -297,7 +302,7 @@ bool TilePos_ToScreenPos(U8 sectionId, U8 tileX, U8 tileY, S32* screenX, S32* sc
 
   Section* section = &LEVEL->sections[sectionId];
 
-  (*screenX) = section->x0 + (tileX * TILE_SIZE);
+  (*screenX) = (section->w0 + (tileX * TILE_SIZE)) - LEVEL->camera;
   (*screenY) = (tileY * TILE_SIZE);
 
   return true;
@@ -309,9 +314,12 @@ S32 HeightAt(S32 x)
   {
     Section* section = &LEVEL->sections[i];
 
-    if (x >= section->x0 && x < section->x1)
+    if (x >= section->w0 && x < section->x1)
     {
-      S32 tx = (x - section->x0);
+      S32 lx = x - LEVEL->camera;
+
+
+      S32 tx = (lx - section->x0);
 
       tx /= TILE_SIZE;
 
@@ -361,8 +369,8 @@ void CollisionTest2(U8 sectionId, U8 tileX, U8 tileY, CollisionPoint* point)
 
 void CollisionFind(Object* obj)
 {
-  CollisionTest(obj->sprite.x, obj->sprite.y + obj->h, obj->w, obj->h, &obj->feet);
-  CollisionTest(obj->sprite.x + obj->w, obj->sprite.y, obj->w, obj->h, &obj->front);
+  CollisionTest(obj->x, obj->y + obj->h, obj->w, obj->h, &obj->feet);
+  CollisionTest(obj->x + obj->w, obj->y, obj->w, obj->h, &obj->front);
   CollisionTest2(obj->feet.id, obj->feet.x + 1, obj->feet.y, &obj->diag);
 }
 
@@ -389,6 +397,8 @@ void MakeSection(Section* section, U32 seed)
   section->id = LEVEL->nextSectionId++;
   section->x0 = x0;
   section->x1 = x1;
+  section->w0 = x0 - LEVEL->camera;
+  section->w1 = x1 - LEVEL->camera;
 
   if (section->id < 1)
   {
@@ -398,6 +408,8 @@ void MakeSection(Section* section, U32 seed)
   {
     section->sectionId = 1 + (Random(&section->seed) % (SECTION_DATA_COUNT- 1)); // @TODO
   }
+
+
 }
 
 void PushSection(Level* level, U32 seed)
@@ -414,7 +426,7 @@ void PushSection(Level* level, U32 seed)
 void DrawSection(Section* section, int idx)
 {
 
-  S32 xOffset = section->x0;
+  S32 xOffset = section->w0;
 
   for(S32 i=0;i < SECTION_WIDTH;i++)
   {
@@ -446,10 +458,10 @@ void AddPlayerCat()
       cat->h = 5;
       cat->alive = true;
 
-      AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT_WALK, player->sprite.x, player->sprite.y);
+      AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT_WALK, player->x, player->y);
       AnimatedSpriteObject_PlayAnimation(&cat->sprite, true, true);
 
-      cat->sprite.x += 8 + Random(&LEVEL->seed) % 48;
+      cat->x += 8 + Random(&LEVEL->seed) % 48;
 
       return;
     }
@@ -475,8 +487,10 @@ void PushLevel(U32 seed)
   AnimatedSpriteObject_Make(&player->sprite, &ANIMATEDSPRITE_PLAYER_WALK, Canvas_GetWidth() / 2, Canvas_GetHeight() / 2);
   AnimatedSpriteObject_PlayAnimation(&player->sprite, true, true);
 
-  player->sprite.x = 48;
-  player->sprite.y = 48;
+  player->x = FOCUS_X;
+  player->y = 48;
+  player->x = 0;
+  player->y = 0;
   player->w = 16;
   player->h = 16;
   player->alive = true;
@@ -486,6 +500,8 @@ void PushLevel(U32 seed)
   AddPlayerCat();
   AddPlayerCat();
   AddPlayerCat();
+
+  LEVEL->camera = 0;
 }
 
 void PopLevel()
@@ -497,7 +513,7 @@ void PopLevel()
 
 void DrawTile(U8 id, U32 x, U32 y, U8 tile)
 {
-  int of = LEVEL->sections[id].x0;
+  int of = LEVEL->sections[id].w0;
   int cx = x * TILE_SIZE;
   int cy = y * TILE_SIZE;
 
@@ -578,7 +594,7 @@ void DrawJump(Jump* jump, U8 r, U8 g, U8 b)
   for(U32 k=1;k < jump->jTStop;k++)
   {
     jumpCurve(jump, k, &x, &y);
-    SDL_RenderDrawLine(gRenderer, x, y, lx, ly);
+    SDL_RenderDrawLine(gRenderer, x - LEVEL->camera, y, lx - LEVEL->camera, ly);
     lx = x;
     ly = y;
   }
@@ -587,8 +603,8 @@ void DrawJump(Jump* jump, U8 r, U8 g, U8 b)
 
 void CalculateJump(Object* playerObject, Jump* jump)
 {
-  jump->jsX = playerObject->sprite.x;
-  jump->jsY = playerObject->sprite.y;
+  jump->jsX = playerObject->x;
+  jump->jsY = playerObject->y;
 
   bool haveValidPoint = false;
 
@@ -673,8 +689,8 @@ void ScanJump(Object* obj, U32 maxLength)
 {
   float maxLengthF = maxLength;
 
-  int ox = obj->sprite.x + (obj->w / 2);
-  int oy = obj->sprite.y + (obj->h / 2) - 1;
+  int ox = obj->x + (obj->w / 2);
+  int oy = obj->y + (obj->h / 2) - 1;
 
   U32   angleSteps = 4;
   U32   lengthSteps = 8;
@@ -702,8 +718,8 @@ void ScanJump(Object* obj, U32 maxLength)
           break;
       }
 
-      // SDL_RenderDrawLine(gRenderer, ox, oy, tx, ty);
-      // SDL_RenderDrawLine(gRenderer, tx, ty, tx, by);
+      SDL_RenderDrawLine(gRenderer, ox - LEVEL->camera, oy, tx - LEVEL->camera, ty);
+      SDL_RenderDrawLine(gRenderer, tx - LEVEL->camera, ty, tx - LEVEL->camera, by);
 
       CollisionTest(tx, by, obj->w, obj->h, &obj->scan);
 
@@ -715,6 +731,7 @@ void ScanJump(Object* obj, U32 maxLength)
       }
 
       DrawJump(&obj->testJump, 0x00, 0x00, 0xFF);
+      
 
       obj->testJump.valid = true;
 
@@ -729,13 +746,14 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
   CollisionFind(playerObject);
 
   bool isAlive = true;
+  bool didSomething = false;
 
   // In air - Gravity
   if (playerObject->feet.tile <= 0)
   {
     if (!playerObject->isJumping)
     {
-      playerObject->sprite.y += 4;
+      playerObject->y += 4;
     }
   }
 
@@ -744,13 +762,13 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
   {
     S32 x, y;
     jumpCurve(&playerObject->jump, playerObject->jump.jT, &x, &y);
-    playerObject->jump.jlX = playerObject->sprite.x;
-    playerObject->jump.jlY = playerObject->sprite.y;
+    playerObject->jump.jlX = playerObject->x;
+    playerObject->jump.jlY = playerObject->y;
 
     y -= playerObject->h;
 
-    playerObject->sprite.x = x;
-    playerObject->sprite.y = y;
+    playerObject->x = x;
+    playerObject->y = y;
 
     playerObject->jump.jT++;
     
@@ -762,11 +780,14 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
     {
       playerObject->isJumping = false;
     }
-
+  }
+  else
+  {
+    playerObject->x++;
   }
 
   // Out of bounds check
-  if (isAlive && playerObject->sprite.y + playerObject->h >= RETRO_CANVAS_DEFAULT_HEIGHT)
+  if (isAlive && playerObject->y + playerObject->h >= RETRO_CANVAS_DEFAULT_HEIGHT)
   {
     printf("Out of bounds\n");
     isAlive = false;
@@ -788,6 +809,33 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
   return isAlive;
 }
 
+void CalculateCentreX()
+{
+  LEVEL->centreX = 0;
+  S32 count = 0;
+
+  for (U32 i=0;i < (MAX_CATS + 1);i++)
+  {
+    Object* playerObject = &LEVEL->playerObjects[i];
+    if (!playerObject->alive)
+      continue;
+
+    LEVEL->centreX += playerObject->x;
+    count++;
+  }
+
+  if (LEVEL->centreX != 0 && count != 0)
+  {
+    LEVEL->centreX /= count;
+  }
+}
+
+void UpdateCamera()
+{
+  CalculateCentreX();
+  LEVEL->camera = LEVEL->centreX - FOCUS_X;
+}
+
 void Step()
 {
   if (Input_GetActionReleased(AC_RESET))
@@ -803,31 +851,34 @@ void Step()
   LEVEL->frameMovementInput = 0;
   if (Input_GetActionDown(AC_DEBUG_LEFT))
   {
-    LEVEL->frameMovementInput -= 4;
+    LEVEL->camera--;
   }
 
   if (Input_GetActionDown(AC_DEBUG_RIGHT))
   {
-    LEVEL->frameMovementInput += 4;
+    LEVEL->camera++;
   }
+
+  UpdateCamera();
 
   // Generate new section on boundary.
-  for (U32 i=0;i < LEVEL->speed;i++)
-  {
-    for (U32 k=0;k < SECTIONS_PER_LEVEL;k++)
-    {
-      Section* section = &LEVEL->sections[k];
-      section->x0--;
-      section->x1 = section->x0 + (SECTION_WIDTH * TILE_SIZE);
 
-      if (section->x1 <= 0)
-      {
-        section->x0 = 0;
-        section->x1 = 0;
-        MakeSection(section, Random(&LEVEL->seed));
-      }
+  for (U32 k=0;k < SECTIONS_PER_LEVEL;k++)
+  {
+    Section* section = &LEVEL->sections[k];
+    section->w0 = section->x0 - LEVEL->camera;
+    section->w1 = section->w0 + (SECTION_WIDTH * TILE_SIZE);
+
+    if (section->w1 <= 0)
+    {
+      printf("%i => %i (Out of bounds)\n", k, section->x1);
+      section->x0 = 0;
+      section->x1 = 0;
+      MakeSection(section, Random(&LEVEL->seed));
     }
   }
+  
+
 
   DrawLevel();
 
@@ -915,8 +966,8 @@ void Step()
   
   // Draw
   Object* player = &LEVEL->playerObjects[0];
-  S32 leashX0 = player->sprite.x + player->w / 3;
-  S32 leashY0 = player->sprite.y + player->h / 2;
+  S32 leashX0 = player->x + player->w / 3;
+  S32 leashY0 = player->y + player->h / 2;
 
   for (U32 i=0;i < (MAX_CATS + 1);i++)
   {
@@ -924,6 +975,9 @@ void Step()
     if (!playerObject->alive)
       continue;
     
+    playerObject->sprite.x = playerObject->x - LEVEL->camera;
+    playerObject->sprite.y = playerObject->y;
+
     Canvas_PlaceAnimated(&playerObject->sprite, true);
 
     if (i > 0)
@@ -932,7 +986,7 @@ void Step()
         SDL_SetRenderDrawColor(gRenderer, 0x55, 0x55, 0x55, 0xFF);
       else
         SDL_SetRenderDrawColor(gRenderer, 0x55, 0xFF, 0x55, 0xFF);
-      SDL_RenderDrawLine(gRenderer, leashX0, leashY0, playerObject->sprite.x + playerObject->w / 2, playerObject->sprite.y);
+      SDL_RenderDrawLine(gRenderer, leashX0 - LEVEL->camera, leashY0, playerObject->x + playerObject->w / 2 - LEVEL->camera, playerObject->y);
       SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
     }
 
@@ -945,7 +999,7 @@ void Step()
     #endif
 
     #if DEBUG_TILES == 1
-    S32 debugX = LEVEL->sections[playerObject->diag.id].x0 + (playerObject->diag.x * TILE_SIZE);
+    S32 debugX = LEVEL->sections[playerObject->diag.id].w0 + (playerObject->diag.x * TILE_SIZE);
     S32 debugY = (playerObject->diag.y * TILE_SIZE);
 
     if (playerObject->diag.tile <= 0)
@@ -958,7 +1012,7 @@ void Step()
     SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
 
 
-    debugX = LEVEL->sections[playerObject->feet.id].x0 + (playerObject->feet.x * TILE_SIZE);
+    debugX = LEVEL->sections[playerObject->feet.id].w0 + (playerObject->feet.x * TILE_SIZE);
     debugY = (playerObject->feet.y * TILE_SIZE);
 
     if (playerObject->feet.tile <= 0)
@@ -970,7 +1024,7 @@ void Step()
 
     SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
 
-    debugX = LEVEL->sections[playerObject->front.id].x0 + (playerObject->front.x * TILE_SIZE);
+    debugX = LEVEL->sections[playerObject->front.id].w0 + (playerObject->front.x * TILE_SIZE);
     debugY = (playerObject->front.y * TILE_SIZE);
 
     if (playerObject->front.tile <= 0)
@@ -982,7 +1036,7 @@ void Step()
 
     SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
 
-    debugX = LEVEL->sections[playerObject->scan.id].x0 + (playerObject->scan.x * TILE_SIZE);
+    debugX = LEVEL->sections[playerObject->scan.id].w0 + (playerObject->scan.x * TILE_SIZE);
     debugY = (playerObject->scan.y * TILE_SIZE);
 
     if (playerObject->scan.tile <= 0)
