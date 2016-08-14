@@ -1897,18 +1897,6 @@ void Frame()
     // @TODO Axis
   }
 
-  if (Input_GetActionReleased(0xBEEFCAFE))
-  {
-    gStepMode = !gStepMode;
-  }
-
-  if (gStepMode == true)
-  {
-    if (!Input_GetActionReleased(0xCAFEBEEF))
-    {
-      return;
-    }
-  }
 
   for (U8 i=0;i < RETRO_CANVAS_COUNT;i++)
   {

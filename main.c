@@ -29,6 +29,7 @@ static Font           FONT_NEOSANS;
 static Bitmap         SPRITESHEET;
 static Bitmap         CATSHEET;
 static Bitmap         PLAYERSHEET;
+static Bitmap         COCO;
 static Animation      ANIMATEDSPRITE_PLAYER_IDLE;
 static Animation      ANIMATEDSPRITE_PLAYER_WALK;
 static Animation      ANIMATEDSPRITE_CAT1_IDLE;
@@ -52,13 +53,9 @@ static Bitmap         TILES1;
 typedef enum 
 {
   AC_JUMP,
-  AC_RAGDOLL,
-  AC_PAUSE,
   AC_CONFIRM,
   AC_CANCEL,
-  AC_RESET,
-  AC_DEBUG_LEFT,
-  AC_DEBUG_RIGHT
+  AC_RESET
 } Actions;
 
 void Init(Settings* settings)
@@ -67,16 +64,13 @@ void Init(Settings* settings)
   Palette_LoadFromBitmap("palette.png", &settings->palette);
 
   Input_BindKey(SDL_SCANCODE_SPACE, AC_JUMP);
-  Input_BindKey(SDL_SCANCODE_LSHIFT, AC_RAGDOLL);
-  Input_BindKey(SDL_SCANCODE_R, AC_RESET);
   Input_BindKey(SDL_SCANCODE_RETURN, AC_CONFIRM);
-  Input_BindKey(SDL_SCANCODE_A, AC_DEBUG_LEFT);
-  Input_BindKey(SDL_SCANCODE_D, AC_DEBUG_RIGHT);
 
   Font_Load("NeoSans.png", &FONT_NEOSANS, Colour_Make(0,0,255), Colour_Make(255,0,255));
   Bitmap_Load("cave.png", &SPRITESHEET, 0);
   Bitmap_Load("cats.png", &CATSHEET, 16);
   Bitmap_Load("player.png", &PLAYERSHEET, 16);
+  Bitmap_Load("coco.png", &COCO, 255);
 
   Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_IDLE, &PLAYERSHEET, 1, 100, 0, 0, 46, 50);
   Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_WALK, &PLAYERSHEET, 8, 120, 0, 150, 46, 50);
@@ -305,11 +299,13 @@ typedef struct
   S32 camera, catCentre, catCentreMin, catCentreMax;
   U32 catCount;
   U32 jumpCount;
+  S32 score;
 } Level;
 
 typedef struct
 {
   U32 seed;
+  U32 cocoTimer;
 } Game;
 
 Game*      GAME;
@@ -658,10 +654,12 @@ void Start()
 
   GAME = Scope_New(Game);
   GAME->seed = 1;
-
+  GAME->cocoTimer = 0;
 
   Canvas_SetFlags(0, CNF_Render | CNF_Clear, 8);
-  Music_Play("hiro2.mod");
+
+  Scope_Push('COCO');
+
 }
 
 void jumpCurve(Jump* jump, U32 t, S32* x, S32* y)
@@ -1010,46 +1008,115 @@ void UpdateCamera()
   LEVEL->camera = LEVEL->catCentre - FOCUS_X;
 }
 
+void MoveSections()
+{
+  // Generate new section on boundary.
+
+  for (U32 k=0;k < SECTIONS_PER_LEVEL;k++)
+  {
+    Section* section = &LEVEL->sections[k];
+    section->w0 = section->x0 - LEVEL->camera;
+    section->w1 = section->w0 + (SECTION_WIDTH * TILE_SIZE);
+
+    if (section->w1 <= 0)
+    {
+      section->x0 = 0;
+      section->x1 = 0;
+      MakeSection(section, Random(&LEVEL->seed));
+    }
+  }
+
+}
+
 void Step()
 {
   bool sfxJump = false, sfxHurt = false, sfxPickup = false;
 
   int scope = Scope_GetName();
 
+  if (scope == 'COCO')
+  {
+    Canvas_Splat(&COCO, 0, 0, NULL);
+    GAME->cocoTimer++;
+
+    if (GAME->cocoTimer > (1000 / 30))
+    {
+      Scope_Pop();
+      Music_Play("hiro2.mod");
+      PushLevel(0x4003);
+      LEVEL->camera = 3092;
+      Scope_Push('MENU');
+    }
+
+    return;
+  }
+
+
+  if (scope == 'MENU')
+  {
+    LEVEL->camera += 10;
+    MoveSections();
+    DrawLevel();
+
+    int s = 40;
+    SDL_Rect r;
+    r.x = s;
+    r.y = s;
+    r.w = Canvas_GetWidth() - s * 2;
+    r.h = Canvas_GetHeight() - s * 2;
+
+    SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0x00, 0x00);
+    SDL_RenderFillRect(gRenderer, &r);
+
+    SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0x00, 0xFF);
+
+    SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    r.x--;
+    r.y--;
+    r.w+=2;
+    r.h+=2;
+    SDL_RenderDrawRect(gRenderer, &r);
+
+    S32 t1 = Canvas_LengthStr(&FONT_NEOSANS, "Cats on Leashes");
+    S32 t2 = Canvas_LengthStr(&FONT_NEOSANS, "Written by Robin Southern 2016 - https://github.com/betajaen/ptbogamejam01");
+    S32 t3 = Canvas_LengthStr(&FONT_NEOSANS, "Keep jumping with your cats across the rooftops. Collect cats as you go. Miss jumping and you fall!");
+    S32 t4 = Canvas_LengthStr(&FONT_NEOSANS, "Space to jump. Hold space to increase jump distance and height");
+
+    S32 t5 = Canvas_LengthStr(&FONT_NEOSANS, "Press <RETURN> to start");
+
+    Canvas_PrintStr(r.x + r.w / 2 - t1 / 2, r.y + 4, &FONT_NEOSANS, 15, "Cats on Leashes");
+    Canvas_PrintStr(r.x + r.w / 2 - t2 / 2, r.y + 48, &FONT_NEOSANS, 15, "Written by Robin Southern 2016 - https://github.com/betajaen/ptbogamejam01");
+    Canvas_PrintStr(r.x + r.w / 2 - t3 / 2, r.y + 48 + 12, &FONT_NEOSANS, 15, "Keep jumping with your cats across the rooftops. Collect cats as you go. Miss jumping and you fall!");
+    Canvas_PrintStr(r.x + r.w / 2 - t4 / 2, r.y + 48 + 12 + 12, &FONT_NEOSANS, 15, "Space to jump. Hold space to increase jump distance and height");
+
+    Canvas_PrintStr(r.x + r.w / 2 - t5 / 2, r.y + r.h - 10, &FONT_NEOSANS, 15, "Press <RETURN> to start");
+
+
+    if (Input_GetActionPressed(AC_CONFIRM))
+    {
+      Scope_Pop();
+      PopLevel();
+    }
+
+    return;
+  }
+
   if (LEVEL == NULL)
   {
     PushLevel(Random(&GAME->seed));
   }
 
-  if (Input_GetActionReleased(AC_RESET))
+  if (Input_GetActionReleased(0xCAFEBEEF))
   {
-    PopLevel();
     gStepMode = true;
     return;
   }
 
   if (scope == 'LEVL')
   {
-
     UpdateCamera();
 
-    // Generate new section on boundary.
-
-    for (U32 k=0;k < SECTIONS_PER_LEVEL;k++)
-    {
-      Section* section = &LEVEL->sections[k];
-      section->w0 = section->x0 - LEVEL->camera;
-      section->w1 = section->w0 + (SECTION_WIDTH * TILE_SIZE);
-
-      if (section->w1 <= 0)
-      {
-        printf("Section:%i => %i (Out of bounds)\n", k, section->x1);
-        section->x0 = 0;
-        section->x1 = 0;
-        MakeSection(section, Random(&LEVEL->seed));
-      }
-    }
-
+    MoveSections();
   }
 
   DrawLevel();
@@ -1075,14 +1142,13 @@ void Step()
     r.h+=2;
     SDL_RenderDrawRect(gRenderer, &r);
     
-    U32 score = (LEVEL->camera * 5) + (LEVEL->jumpCount * 10);
 
     S32 gameoverLength = Canvas_LengthStr(&FONT_NEOSANS, "GAME OVER!");
-    S32 scoreLength =  Canvas_LengthF(&FONT_NEOSANS, "Score: %08d", score);
+    S32 scoreLength =  Canvas_LengthF(&FONT_NEOSANS, "Score: %08d", LEVEL->score);
     S32 instructionsLength = Canvas_LengthStr(&FONT_NEOSANS, "<RETURN> to play again");
 
     Canvas_PrintStr(r.x + r.w / 2 - gameoverLength / 2, r.y + 4, &FONT_NEOSANS, 15, "GAME OVER!");
-    Canvas_PrintF(r.x + r.w / 2 - scoreLength / 2, r.y + r.h / 2 - 9, &FONT_NEOSANS, 15, "Score: %08d", score);
+    Canvas_PrintF(r.x + r.w / 2 - scoreLength / 2, r.y + r.h / 2 - 9, &FONT_NEOSANS, 15, "Score: %08d", LEVEL->score);
 
     Canvas_PrintStr(r.x + r.w / 2 - instructionsLength / 2, r.y + r.h - 10, &FONT_NEOSANS, 15, "<RETURN> to play again");
 
@@ -1204,6 +1270,9 @@ void Step()
   {
     Object* playerObject = &LEVEL->playerObjects[i];
 
+    if (playerObject->alive == false)
+      continue;
+
     playerObject->sprite.x = playerObject->x - LEVEL->camera;
     playerObject->sprite.y = playerObject->y;
     
@@ -1221,9 +1290,7 @@ void Step()
     }
   }
 
-  U32 score = (LEVEL->camera * 5) + (LEVEL->jumpCount * 10);
-
-  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%08d", score);
+  Canvas_PrintF(0, 0, &FONT_NEOSANS, 15, "%08d", LEVEL->score);
 
   for (U32 i=0;i < LEVEL->catCount;i++)
   {
@@ -1241,9 +1308,11 @@ void Step()
     }
   }
 
+  LEVEL->score++;
+
   if (sfxJump)
   {
-    LEVEL->jumpCount++;
+    LEVEL->score += 10 * LEVEL->playerObjects[0].jumpStrength;
     Sound_Play(Random(&GAME->seed) % 2 == 0 ? &SOUND_JUMP1 : &SOUND_JUMP2, SDL_MIX_MAXVOLUME);
   } 
 
@@ -1264,5 +1333,5 @@ void Step()
   }
 
   //Canvas_Splat(&TILES1, 0, 0, NULL);
-  Canvas_Debug(&FONT_NEOSANS);
+  //Canvas_Debug(&FONT_NEOSANS);
 }
