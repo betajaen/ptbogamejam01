@@ -28,12 +28,78 @@
 static Font           FONT_NEOSANS;
 static Bitmap         SPRITESHEET;
 static Bitmap         CATSHEET;
+static Bitmap         PLAYERSHEET;
 static Animation      ANIMATEDSPRITE_PLAYER_IDLE;
 static Animation      ANIMATEDSPRITE_PLAYER_WALK;
-static Animation      ANIMATEDSPRITE_CAT_IDLE;
-static Animation      ANIMATEDSPRITE_CAT_WALK;
-static Sound          SOUND_COIN;
+static Animation      ANIMATEDSPRITE_CAT1_IDLE;
+static Animation      ANIMATEDSPRITE_CAT1_WALK;
+static Animation      ANIMATEDSPRITE_CAT2_IDLE;
+static Animation      ANIMATEDSPRITE_CAT2_WALK;
+static Animation      ANIMATEDSPRITE_CAT3_IDLE;
+static Animation      ANIMATEDSPRITE_CAT3_WALK;
+static Animation      ANIMATEDSPRITE_CAT_SHADOW_IDLE;
+static Animation      ANIMATEDSPRITE_CAT_SHADOW_WALK;
+static Sound          SOUND_JUMP1;
+static Sound          SOUND_JUMP2;
+static Sound          SOUND_HURT1;
+static Sound          SOUND_HURT2;
+static Sound          SOUND_PICKUP1;
+static Sound          SOUND_PICKUP2;
+static Sound          SOUND_SELECT;
 static Bitmap         TILES1;
+
+
+typedef enum 
+{
+  AC_JUMP,
+  AC_RAGDOLL,
+  AC_PAUSE,
+  AC_CONFIRM,
+  AC_CANCEL,
+  AC_RESET,
+  AC_DEBUG_LEFT,
+  AC_DEBUG_RIGHT
+} Actions;
+
+void Init(Settings* settings)
+{
+  Palette_Make(&settings->palette);
+  Palette_LoadFromBitmap("palette.png", &settings->palette);
+
+  Input_BindKey(SDL_SCANCODE_SPACE, AC_JUMP);
+  Input_BindKey(SDL_SCANCODE_LSHIFT, AC_RAGDOLL);
+  Input_BindKey(SDL_SCANCODE_R, AC_RESET);
+  Input_BindKey(SDL_SCANCODE_A, AC_DEBUG_LEFT);
+  Input_BindKey(SDL_SCANCODE_D, AC_DEBUG_RIGHT);
+
+  Font_Load("NeoSans.png", &FONT_NEOSANS, Colour_Make(0,0,255), Colour_Make(255,0,255));
+  Bitmap_Load("cave.png", &SPRITESHEET, 0);
+  Bitmap_Load("cats.png", &CATSHEET, 16);
+  Bitmap_Load("player.png", &PLAYERSHEET, 16);
+
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_IDLE, &PLAYERSHEET, 1, 100, 0, 0, 46, 50);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_WALK, &PLAYERSHEET, 8, 120, 0, 150, 46, 50);
+
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT1_IDLE, &CATSHEET, 1, 100, 0, 0, 18, 18);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT1_WALK, &CATSHEET, 3, 100, 0, 0, 18, 18);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT2_IDLE, &CATSHEET, 1, 100, 0, 18, 18, 18);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT2_WALK, &CATSHEET, 3, 100, 0, 18, 18, 18);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT3_IDLE, &CATSHEET, 1, 100, 0, 36, 18, 18);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT3_WALK, &CATSHEET, 3, 100, 0, 36, 18, 18);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_SHADOW_IDLE, &CATSHEET, 1, 100, 0, 234, 18, 18);
+  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_SHADOW_WALK, &CATSHEET, 3, 100, 0, 234, 18, 18);
+
+  Sound_Load(&SOUND_HURT1,   "hurt1.wav");
+  Sound_Load(&SOUND_HURT2,   "hurt2.wav");
+  Sound_Load(&SOUND_JUMP1,   "jump1.wav");
+  Sound_Load(&SOUND_JUMP2,   "jump2.wav");
+  Sound_Load(&SOUND_PICKUP1, "pickup1.wav");
+  Sound_Load(&SOUND_PICKUP2, "pickup2.wav");
+  Sound_Load(&SOUND_SELECT,  "select.wav");
+
+  Bitmap_Load("tiles1.png", &TILES1, 16);
+
+}
 
 void Splat_Tile(Bitmap* bitmap, S32 x, S32 y, S32 s, U32 index)
 {
@@ -61,19 +127,6 @@ void Splat_Tile(Bitmap* bitmap, S32 x, S32 y, S32 s, U32 index)
 
   Canvas_Splat3(bitmap, &dst, &src);
 }
-
-
-typedef enum 
-{
-  AC_JUMP,
-  AC_RAGDOLL,
-  AC_PAUSE,
-  AC_CONFIRM,
-  AC_CANCEL,
-  AC_RESET,
-  AC_DEBUG_LEFT,
-  AC_DEBUG_RIGHT
-} Actions;
 
 typedef enum
 {
@@ -165,7 +218,7 @@ void LoadSectionData()
         else
         {
           section->col[i] = 0;
-          section->non[i] = 0;
+          section->non[i] = v;
         }
       }
 
@@ -234,7 +287,7 @@ typedef struct
   U32 nextSectionId;
   Object  playerObjects[1 + MAX_CATS]; // 0 = Player, 1+ = Cats
   Section sections[SECTIONS_PER_LEVEL];
-  S32 camera, centreX;
+  S32 camera, centreX, catCentreMin, catCentreMax;
 } Level;
 
 typedef struct
@@ -442,9 +495,16 @@ void DrawSection(Section* section, int idx)
       {
         Splat_Tile(&TILES1, xOffset + (i * TILE_SIZE), (j * TILE_SIZE), TILE_SIZE, index - 1);
       }
+
+      index = data->non[i + (j * SECTION_WIDTH)];
+      if (index > 0)
+      {
+        Splat_Tile(&TILES1, xOffset + (i * TILE_SIZE), (j * TILE_SIZE), TILE_SIZE, index - 1);
+      }
+
     }
   }
-  Canvas_PrintF(xOffset, 10, &FONT_NEOSANS, 15, "%i/%i:%i", section->id, idx, section->sectionId);
+  // Canvas_PrintF(xOffset, 10, &FONT_NEOSANS, 15, "%i/%i:%i", section->id, idx, section->sectionId);
 }
 
 void AddPlayerCat()
@@ -457,14 +517,29 @@ void AddPlayerCat()
     {
       Object* cat = &LEVEL->playerObjects[i];
 
-      cat->w = 16;
-      cat->h = 13;
+      cat->w = 18;
+      cat->h = 12;
       cat->alive = true;
 
-      AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT_WALK, player->x, player->y);
+      U8 type = (Random(&LEVEL->seed) % 3);
+
+      switch(type)
+      {
+        default:
+        case 0:
+          AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT1_WALK, player->x, player->y);
+        break;
+        case 1:
+          AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT2_WALK, player->x, player->y);
+        break;
+        case 2:
+          AnimatedSpriteObject_Make(&cat->sprite, &ANIMATEDSPRITE_CAT3_WALK, player->x, player->y);
+        break;
+      }
+
       AnimatedSpriteObject_PlayAnimation(&cat->sprite, true, true);
 
-      cat->x += 8 + Random(&LEVEL->seed) % 48;
+      cat->x += 32 +  Random(&LEVEL->seed) % 64;
 
       return;
     }
@@ -494,8 +569,8 @@ void PushLevel(U32 seed)
   player->y = 48;
   player->x = 0;
   player->y = 0;
-  player->w = 16;
-  player->h = 16;
+  player->w = 48;
+  player->h = 48;
   player->alive = true;
 
   // Build cat player here.
@@ -531,32 +606,6 @@ void DrawLevel()
   }
 }
 
-void Init(Settings* settings)
-{
-  Palette_Make(&settings->palette);
-  Palette_LoadFromBitmap("palette.png", &settings->palette);
-
-  Input_BindKey(SDL_SCANCODE_SPACE, AC_JUMP);
-  Input_BindKey(SDL_SCANCODE_LSHIFT, AC_RAGDOLL);
-  Input_BindKey(SDL_SCANCODE_R, AC_RESET);
-  Input_BindKey(SDL_SCANCODE_A, AC_DEBUG_LEFT);
-  Input_BindKey(SDL_SCANCODE_D, AC_DEBUG_RIGHT);
-
-  Font_Load("NeoSans.png", &FONT_NEOSANS, Colour_Make(0,0,255), Colour_Make(255,0,255));
-  Bitmap_Load("cave.png", &SPRITESHEET, 0);
-  Bitmap_Load("cats.png", &CATSHEET, 16);
-
-  Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_IDLE, &SPRITESHEET, 1, 100, 0, 80, 16, 16);
-  Animation_LoadHorizontal(&ANIMATEDSPRITE_PLAYER_WALK, &SPRITESHEET, 4, 120, 0, 80, 16, 16);
-
-  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_IDLE, &CATSHEET, 1, 100, 0, 0, 16, 16);
-  Animation_LoadHorizontal(&ANIMATEDSPRITE_CAT_WALK, &CATSHEET, 3, 120, 0, 0, 16, 16);
-
-  Sound_Load(&SOUND_COIN, "coin.wav");
-
-  Bitmap_Load("tiles1.png", &TILES1, 16);
-  
-}
 
 void Start()
 {
@@ -722,8 +771,10 @@ void ScanJump(Object* obj, U32 maxLength)
           break;
       }
 
-      SDL_RenderDrawLine(gRenderer, ox - LEVEL->camera, oy, tx - LEVEL->camera, ty);
-      SDL_RenderDrawLine(gRenderer, tx - LEVEL->camera, ty, tx - LEVEL->camera, by);
+      #if 0
+        SDL_RenderDrawLine(gRenderer, ox - LEVEL->camera, oy, tx - LEVEL->camera, ty);
+        SDL_RenderDrawLine(gRenderer, tx - LEVEL->camera, ty, tx - LEVEL->camera, by);
+      #endif
 
       CollisionTest(tx, by, obj->w, obj->h, &obj->scan);
 
@@ -731,11 +782,12 @@ void ScanJump(Object* obj, U32 maxLength)
 
       if (LimitJump(obj, &obj->testJump))
       {
-        
+        DrawJump(&obj->testJump, 208, 70, 72);
       }
-
-      DrawJump(&obj->testJump, 0x00, 0x00, 0xFF);
-      
+      else
+      {
+        DrawJump(&obj->testJump, 210, 125, 44);
+      }
 
       obj->testJump.valid = true;
 
@@ -745,7 +797,7 @@ void ScanJump(Object* obj, U32 maxLength)
 
 }
 
-bool HandlePlayerObject(Object* playerObject, bool isPlayer)
+bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 catCentre)
 {
   CollisionFind(playerObject);
 
@@ -787,7 +839,31 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
   }
   else
   {
-    playerObject->x++;
+    if (isPlayer)
+    {
+      if (playerObject->x > LEVEL->catCentreMax)
+        playerObject->x -= 2;
+      else if (playerObject->x < LEVEL->catCentreMin)
+        playerObject->x += 2;
+      else
+        playerObject->x++;
+    }
+    else
+    {
+      if (reduce)
+      {
+        if (playerObject->x > catCentre)
+          playerObject -= 2;
+        else if (playerObject->x < catCentre)
+          playerObject += 2;
+        else
+          playerObject->x++;
+      }
+      else
+      {
+        playerObject->x++;
+      }
+    }
   }
 
   // Out of bounds check
@@ -816,6 +892,8 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer)
 void CalculateCentreX()
 {
   LEVEL->centreX = 0;
+  LEVEL->catCentreMin = 10000000;
+  LEVEL->catCentreMax = -10000000;
   S32 count = 0;
 
   for (U32 i=0;i < (MAX_CATS + 1);i++)
@@ -825,6 +903,14 @@ void CalculateCentreX()
       continue;
 
     LEVEL->centreX += playerObject->x;
+    
+    if (i > 0)
+    {
+      if (playerObject->x < LEVEL->catCentreMin)
+        LEVEL->catCentreMin = playerObject->x;
+      else if (playerObject->x > LEVEL->catCentreMax)
+        LEVEL->catCentreMax = playerObject->x;
+    }
     count++;
   }
 
@@ -842,6 +928,8 @@ void UpdateCamera()
 
 void Step()
 {
+  bool sfxJump = false, sfxHurt = false, sfxPickup = false;
+
   if (Input_GetActionReleased(AC_RESET))
   {
     PopLevel();
@@ -882,8 +970,7 @@ void Step()
     }
   }
   
-
-
+  
   DrawLevel();
 
   if (Input_GetActionPressed(AC_JUMP))
@@ -946,6 +1033,8 @@ void Step()
         playerObject->jumpStrength = 0;
 
         playerObject->jump = playerObject->testJump;
+
+        sfxJump = true;
       }
       else
       {
@@ -955,24 +1044,34 @@ void Step()
       }
     }
   }
-  
+
+  S32 catCentre = LEVEL->catCentreMin + (LEVEL->catCentreMax - LEVEL->catCentreMin);
+  bool reduce = (LEVEL->catCentreMax - LEVEL->catCentreMin) > 100;
+
+  if (reduce)
+  {
+    printf("Reduce = %i\n", (LEVEL->catCentreMax - LEVEL->catCentreMin));
+  }
+
+
   for (U32 i=0;i < (MAX_CATS + 1);i++)
   {
     Object* playerObject = &LEVEL->playerObjects[i];
     if (!playerObject->alive)
       continue;
 
-    if (HandlePlayerObject(playerObject, i == 0) == false)
+    if (HandlePlayerObject(playerObject, i == 0, reduce, catCentre) == false)
     {
       playerObject->alive = false;
+      sfxHurt = true;
     }
   }
-  
+
   // Draw
   Object* player = &LEVEL->playerObjects[0];
-  S32 leashX0 = player->x + player->w / 3;
-  S32 leashY0 = player->y + player->h / 2;
-
+  S32 leashX0 = player->x + player->w / 2;
+  S32 leashY0 = player->y + player->h / 2 + 4;
+  
   for (U32 i=0;i < (MAX_CATS + 1);i++)
   {
     Object* playerObject = &LEVEL->playerObjects[i];
@@ -986,19 +1085,19 @@ void Step()
 
     if (i > 0)
     {
-      if (playerObject->feet.tile <= 0)
-        SDL_SetRenderDrawColor(gRenderer, 0x55, 0x55, 0x55, 0xFF);
-      else
-        SDL_SetRenderDrawColor(gRenderer, 0x55, 0xFF, 0x55, 0xFF);
-      SDL_RenderDrawLine(gRenderer, leashX0 - LEVEL->camera, leashY0, playerObject->x + playerObject->w / 2 - LEVEL->camera, playerObject->y);
+      S32 leashX1 = playerObject->x + 12;
+      S32 leashY1 = playerObject->y + 4;
+
+      SDL_SetRenderDrawColor(gRenderer, 20, 12, 28, 0xFF);
+      SDL_RenderDrawLine(gRenderer, leashX0 - LEVEL->camera, leashY0, leashX1 - LEVEL->camera, leashY1);
       SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
     }
 
     #if DEBUG_ARC == 1
     if (playerObject->isJumping)
     {
-      DrawJump(&playerObject->jump, 0x55, 0xFF, 0x55);
-      DrawJump(&playerObject->testJump, 0xFF, 0x55, 0x55);
+      //DrawJump(&playerObject->jump, 0x55, 0xFF, 0x55);
+      //DrawJump(&playerObject->testJump, 0xFF, 0x55, 0x55);
     }
     #endif
 
@@ -1065,6 +1164,21 @@ void Step()
       break;
     }
   }
+
+  if (sfxJump)
+  {
+    Sound_Play(Random(&GAME->seed) % 2 == 0 ? &SOUND_JUMP1 : &SOUND_JUMP2, SDL_MIX_MAXVOLUME);
+  } 
+
+  if (sfxHurt)
+  {
+    Sound_Play(Random(&GAME->seed) % 2 == 0 ? &SOUND_HURT1 : &SOUND_HURT2, SDL_MIX_MAXVOLUME);
+  } 
+
+  if (sfxPickup)
+  {
+    Sound_Play(Random(&GAME->seed) % 2 == 0 ? &SOUND_PICKUP1 : &SOUND_PICKUP2, SDL_MIX_MAXVOLUME);
+  } 
 
   // Cats dead or player dead.
   if (!hasCats || !LEVEL->playerObjects[0].alive)

@@ -434,7 +434,7 @@ Animation* AnimationHandle_Get(AnimationHandle handle)
 
 void Retro_Animation_Load(Animation* inAnimation, Bitmap* bitmap, U8 numFrames, U8 frameLengthMilliseconds, U32 originX, U32 originY, U32 frameWidth, U32 frameHeight, S32 frameOffsetX, S32 frameOffsetY)
 {
-  assert(numFrames < RETRO_MAX_ANIMATED_SPRITE_FRAMES);
+  assert(numFrames <= RETRO_MAX_ANIMATED_SPRITE_FRAMES);
   assert(inAnimation);
   assert(bitmap);
 
