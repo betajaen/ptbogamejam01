@@ -1,7 +1,7 @@
 palette.png RESOURCE "assets/palette.png"
 NeoSans.png RESOURCE "assets/NeoSans.png"
 cave.png RESOURCE "assets/cave.png"
-origin.mod RESOURCE "assets/origin.mod"
+hiro4.mod RESOURCE "assets/hiro4.mod"
 tiles1.png RESOURCE "assets/tiles1.png"
 sections.tmx RESOURCE "assets/sections.tmx"
 cats.png RESOURCE "assets/cats.png"

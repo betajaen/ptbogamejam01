@@ -627,7 +627,7 @@ void Start()
 
 
   Canvas_SetFlags(0, CNF_Render | CNF_Clear, 8);
-  // Music_Play("origin.mod");
+  /// Music_Play("hiro4.mod");
 }
 
 void jumpCurve(Jump* jump, U32 t, S32* x, S32* y)
