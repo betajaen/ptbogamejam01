@@ -139,6 +139,8 @@ typedef struct
 {
   U8  col[SECTION_WIDTH * SECTION_HEIGHT];
   U8  non[SECTION_WIDTH * SECTION_HEIGHT];
+  bool catPickup;
+  U8   catPickupX, catPickupY;
 } SectionData;
 
 SectionData* SECTION_DATA[256];
@@ -221,6 +223,16 @@ void LoadSectionData()
           section->col[i] = 0;
           section->non[i] = v;
         }
+
+        if (v == 240)
+        {
+          section->col[i] = 0;
+          section->non[i] = 0;
+
+          section->catPickup = true;
+          section->catPickupX = i % SECTION_WIDTH;
+          section->catPickupY = i / SECTION_WIDTH;  // NO IDEA.
+        }
       }
 
       for(U32 j=0;j < (SECTION_HEIGHT); j++)
@@ -275,6 +287,8 @@ typedef struct
   U8  sectionId;
   U8  objectCount;
   S32 x0, x1, w0, w1;
+  bool catPickup;
+  U8   catPickupX, catPickupY;
   Object objects[MAX_OBJECTS_PER_SECTION];
 } Section;
 
@@ -300,6 +314,7 @@ typedef struct
 
 Game*      GAME;
 Level*     LEVEL;
+bool       STEP_MODE;
 
 U32  Random(U32* seed)
 {
@@ -429,7 +444,7 @@ void CollisionTest2(U8 sectionId, U8 tileX, U8 tileY, CollisionPoint* point)
 void CollisionFind(Object* obj)
 {
   CollisionTest(obj->x, obj->y + obj->h, obj->w, obj->h, &obj->feet);
-  CollisionTest(obj->x + obj->w, obj->y, obj->w, obj->h, &obj->front);
+  CollisionTest(obj->x + obj->w, obj->y + obj->h - TILE_SIZE, obj->w, obj->h, &obj->front);
   CollisionTest2(obj->feet.id, obj->feet.x + 1, obj->feet.y, &obj->diag);
 }
 
@@ -466,6 +481,17 @@ void MakeSection(Section* section, U32 seed)
   else
   {
     section->sectionId = 1 + (Random(&section->seed) % (SECTION_DATA_COUNT- 1)); // @TODO
+  }
+
+  SectionData* data = SECTION_DATA[section->sectionId];
+
+  section->catPickup = false;
+
+  if (data->catPickup && (Random(&section->seed) % 5) == 0) 
+  {
+    section->catPickup = true;
+    section->catPickupX = data->catPickupX;
+    section->catPickupY = data->catPickupY;
   }
 
 
@@ -507,6 +533,12 @@ void DrawSection(Section* section, int idx)
 
     }
   }
+
+  if (section->catPickup)
+  {
+    Splat_Tile(&TILES1, xOffset + (section->catPickupX * TILE_SIZE), (section->catPickupY * TILE_SIZE), TILE_SIZE, 239);
+  }
+
   // Canvas_PrintF(xOffset, 10, &FONT_NEOSANS, 15, "%i/%i:%i", section->id, idx, section->sectionId);
 }
 
@@ -542,7 +574,8 @@ void AddPlayerCat()
 
       AnimatedSpriteObject_PlayAnimation(&cat->sprite, true, true);
 
-      cat->x += 32 +  Random(&LEVEL->seed) % 64;
+      cat->x = player->x + Random(&LEVEL->seed) % 64;
+      cat->y = player->y + player->h;
 
       return;
     }
@@ -628,7 +661,7 @@ void Start()
 
 
   Canvas_SetFlags(0, CNF_Render | CNF_Clear, 8);
-  /// Music_Play("hiro4.mod");
+  Music_Play("hiro2.mod");
 }
 
 void jumpCurve(Jump* jump, U32 t, S32* x, S32* y)
@@ -799,12 +832,29 @@ void ScanJump(Object* obj, U32 maxLength)
 
 }
 
+void CheckCatPickup(Object* playerObject, CollisionPoint c)
+{
+  Section* section = &LEVEL->sections[c.id];
+
+  if (section->catPickup  && c.x == section->catPickupX && c.y == section->catPickupY)
+  {
+    section->catPickup = false;
+    if (LEVEL->catCount < MAX_CATS)
+    {
+      AddPlayerCat();
+    }
+  }
+}
+
 bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 catCentre)
 {
   CollisionFind(playerObject);
 
   bool isAlive = true;
-  bool didSomething = false;
+
+  CheckCatPickup(playerObject, playerObject->front);
+  CheckCatPickup(playerObject, playerObject->feet);
+  CheckCatPickup(playerObject, playerObject->diag);
 
   // In air - Gravity
   if ( !(playerObject->feet.tile >= 1 && playerObject->feet.tile <= 16) )
@@ -829,10 +879,13 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
   // Jumping
   if (playerObject->isJumping)
   {
+    S32 lx = playerObject->x;
+    S32 ly = playerObject->y;
+
     // @Hack
     // To prevent bad jumps. It seems to be occuring to an old test jump is being marked as valid, whilst a current jump isn't available.
     // This just checks to see if the startX < x when time is 0.
-    if (playerObject->x < playerObject->jump.jsX && playerObject->jump.jT == 0)
+    if (playerObject->jump.jsX < playerObject->x && playerObject->jump.jT == 0)
     {
       playerObject->isJumping = false;
 
@@ -841,9 +894,6 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
       printf("Bad jump!");
       goto walk;
     }
-
-    S32 lx = playerObject->x;
-    S32 ly = playerObject->y;
 
     S32 k = (playerObject->x - LEVEL->camera);
 
@@ -859,7 +909,7 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
 
     if (isPlayer && (playerObject->x - LEVEL->camera) < -playerObject->w)
     {
-      printf("BREAK!");
+       printf("BREAK!");
     }
 
     playerObject->jump.jT++;
@@ -969,6 +1019,13 @@ void Step()
   if (LEVEL == NULL)
   {
     PushLevel(Random(&GAME->seed));
+  }
+
+  if (Input_GetActionReleased(AC_RESET))
+  {
+    PopLevel();
+    gStepMode = true;
+    return;
   }
 
   if (scope == 'LEVL')

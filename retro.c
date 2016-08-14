@@ -115,6 +115,7 @@ Animation*            gAnimations[256];
 Sprite*               gSprites[256];
 FramePresentation     gFramePresentation;
 float                 gFrameAlpha, gFrameBeta;
+bool                  gStepMode;
 
 typedef union
 {
@@ -1895,7 +1896,20 @@ void Frame()
 
     // @TODO Axis
   }
-  
+
+  if (Input_GetActionReleased(0xBEEFCAFE))
+  {
+    gStepMode = !gStepMode;
+  }
+
+  if (gStepMode == true)
+  {
+    if (!Input_GetActionReleased(0xCAFEBEEF))
+    {
+      return;
+    }
+  }
+
   for (U8 i=0;i < RETRO_CANVAS_COUNT;i++)
   {
     if (gCanvasFlags[i] & CNF_Clear)
@@ -1947,6 +1961,9 @@ int main(int argc, char **argv)
   {
     gInputActions[i].action = 0xDEADBEEF;
   }
+
+  Input_BindKey(SDL_SCANCODE_P, 0xCAFEBEEF);
+  Input_BindKey(SDL_SCANCODE_O, 0xBEEFCAFE);
 
   gSettings.windowWidth = RETRO_WINDOW_DEFAULT_WIDTH;
   gSettings.windowHeight = RETRO_WINDOW_DEFAULT_HEIGHT;
@@ -2004,6 +2021,7 @@ int main(int argc, char **argv)
   gFramePresentation = FP_Normal;
   gFrameAlpha = 0.78f;
   gFrameBeta = 0.78f;
+  gStepMode = false;
 
   Init(&gSettings);
 
@@ -2035,6 +2053,7 @@ int main(int argc, char **argv)
   while(gQuit == false)
   {
     Frame();
+    
     float frameTicks = Timer_GetTicks(&gCapTimer);
     if (frameTicks < (1000.0f / RETRO_FRAME_RATE))
     {
