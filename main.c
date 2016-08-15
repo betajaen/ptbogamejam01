@@ -23,6 +23,8 @@
 
 #define FOCUS_X 48
 
+#define VERSION "1.0"
+
 #include "retro.c"
 
 static Font           FONT_NEOSANS;
@@ -52,9 +54,8 @@ static Bitmap         TILES1;
 
 typedef enum 
 {
-  AC_JUMP,
-  AC_CONFIRM,
-  AC_CANCEL,
+  AC_ACTION,
+  AC_MUSIC,
   AC_RESET
 } Actions;
 
@@ -63,8 +64,8 @@ void Init(Settings* settings)
   Palette_Make(&settings->palette);
   Palette_LoadFromBitmap("palette.png", &settings->palette);
 
-  Input_BindKey(SDL_SCANCODE_SPACE, AC_JUMP);
-  Input_BindKey(SDL_SCANCODE_RETURN, AC_CONFIRM);
+  Input_BindKey(SDL_SCANCODE_SPACE, AC_ACTION);
+  Input_BindKey(SDL_SCANCODE_M, AC_MUSIC);
 
   Font_Load("NeoSans.png", &FONT_NEOSANS, Colour_Make(0,0,255), Colour_Make(255,0,255));
   Bitmap_Load("cave.png", &SPRITESHEET, 0);
@@ -228,7 +229,7 @@ void LoadSectionData()
           section->catPickupY = i / SECTION_WIDTH;  // NO IDEA.
         }
       }
-
+#if 0
       for(U32 j=0;j < (SECTION_HEIGHT); j++)
       {
         for(U32 i=0;i < (SECTION_WIDTH); i++)
@@ -239,6 +240,7 @@ void LoadSectionData()
       }
 
       printf("\n");
+#endif
     }
     else
       break;
@@ -306,6 +308,7 @@ typedef struct
 {
   U32 seed;
   U32 cocoTimer;
+  bool music;
 } Game;
 
 Game*      GAME;
@@ -830,7 +833,7 @@ void ScanJump(Object* obj, U32 maxLength)
 
 }
 
-void CheckCatPickup(Object* playerObject, CollisionPoint c)
+bool CheckCatPickup(Object* playerObject, CollisionPoint c)
 {
   Section* section = &LEVEL->sections[c.id];
 
@@ -840,19 +843,22 @@ void CheckCatPickup(Object* playerObject, CollisionPoint c)
     if (LEVEL->catCount < MAX_CATS)
     {
       AddPlayerCat();
+      return true;
     }
   }
+
+  return false;
 }
 
-bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 catCentre)
+int HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 catCentre)
 {
   CollisionFind(playerObject);
 
   bool isAlive = true;
-
-  CheckCatPickup(playerObject, playerObject->front);
-  CheckCatPickup(playerObject, playerObject->feet);
-  CheckCatPickup(playerObject, playerObject->diag);
+  bool pickup = false;
+  pickup |= CheckCatPickup(playerObject, playerObject->front);
+  pickup |= CheckCatPickup(playerObject, playerObject->feet);
+  pickup |= CheckCatPickup(playerObject, playerObject->diag);
 
   // In air - Gravity
   if ( !(playerObject->feet.tile >= 1 && playerObject->feet.tile <= 16) )
@@ -966,7 +972,13 @@ bool HandlePlayerObject(Object* playerObject, bool isPlayer, bool reduce, S32 ca
     printf("Object died, Player = %i\n", isPlayer);
   }
 
-  return isAlive;
+  if (pickup)
+  return 2;
+
+  if (isAlive)
+    return 1;
+
+  return 0;
 }
 
 void CalculateCentreX()
@@ -1042,6 +1054,7 @@ void Step()
     if (GAME->cocoTimer > (1000 / 30))
     {
       Scope_Pop();
+      GAME->music = true;
       Music_Play("hiro2.mod");
       PushLevel(0x4003);
       LEVEL->camera = 3092;
@@ -1049,6 +1062,18 @@ void Step()
     }
 
     return;
+  }
+
+  if (scope == 'MENU' || scope == 'LEVL' || scope == 'DEAT')
+  {
+    if (Input_GetActionReleased(AC_MUSIC))
+    {
+      GAME->music = !GAME->music;
+      if (GAME->music)
+        SDL_PauseAudio(0);
+      else
+        SDL_PauseAudio(1);
+    }
   }
 
 
@@ -1080,19 +1105,21 @@ void Step()
     S32 t1 = Canvas_LengthStr(&FONT_NEOSANS, "Cats on Leashes");
     S32 t2 = Canvas_LengthStr(&FONT_NEOSANS, "Written by Robin Southern 2016 - https://github.com/betajaen/ptbogamejam01");
     S32 t3 = Canvas_LengthStr(&FONT_NEOSANS, "Keep jumping with your cats across the rooftops. Collect cats as you go. Miss jumping and you fall!");
-    S32 t4 = Canvas_LengthStr(&FONT_NEOSANS, "Space to jump. Hold space to increase jump distance and height");
+    S32 t4 = Canvas_LengthStr(&FONT_NEOSANS, "<SPACE> to jump. Hold space to increase jump distance and height");
 
-    S32 t5 = Canvas_LengthStr(&FONT_NEOSANS, "Press <RETURN> to start");
+    S32 t5 = Canvas_LengthStr(&FONT_NEOSANS, "Press <SPACE> to start");
+    S32 t6 = Canvas_LengthStr(&FONT_NEOSANS, VERSION);
 
     Canvas_PrintStr(r.x + r.w / 2 - t1 / 2, r.y + 4, &FONT_NEOSANS, 15, "Cats on Leashes");
     Canvas_PrintStr(r.x + r.w / 2 - t2 / 2, r.y + 48, &FONT_NEOSANS, 15, "Written by Robin Southern 2016 - https://github.com/betajaen/ptbogamejam01");
     Canvas_PrintStr(r.x + r.w / 2 - t3 / 2, r.y + 48 + 12, &FONT_NEOSANS, 15, "Keep jumping with your cats across the rooftops. Collect cats as you go. Miss jumping and you fall!");
-    Canvas_PrintStr(r.x + r.w / 2 - t4 / 2, r.y + 48 + 12 + 12, &FONT_NEOSANS, 15, "Space to jump. Hold space to increase jump distance and height");
+    Canvas_PrintStr(r.x + r.w / 2 - t4 / 2, r.y + 48 + 12 + 12, &FONT_NEOSANS, 15, "<SPACE> to jump. Hold space to increase jump distance and height");
 
-    Canvas_PrintStr(r.x + r.w / 2 - t5 / 2, r.y + r.h - 10, &FONT_NEOSANS, 15, "Press <RETURN> to start");
+    Canvas_PrintStr(r.x + r.w / 2 - t5 / 2, r.y + r.h - 10, &FONT_NEOSANS, 15, "Press <SPACE> to start");
+    Canvas_PrintStr(r.x + 4, r.y + r.h - 10, &FONT_NEOSANS, 15, VERSION);
 
 
-    if (Input_GetActionPressed(AC_CONFIRM))
+    if (Input_GetActionPressed(AC_ACTION))
     {
       Scope_Pop();
       PopLevel();
@@ -1123,6 +1150,8 @@ void Step()
 
   if (scope == 'DEAT')
   {
+    DrawLevel();
+
     int s = 40;
     SDL_Rect r;
     r.x = s;
@@ -1145,22 +1174,22 @@ void Step()
 
     S32 gameoverLength = Canvas_LengthStr(&FONT_NEOSANS, "GAME OVER!");
     S32 scoreLength =  Canvas_LengthF(&FONT_NEOSANS, "Score: %08d", LEVEL->score);
-    S32 instructionsLength = Canvas_LengthStr(&FONT_NEOSANS, "<RETURN> to play again");
+    S32 instructionsLength = Canvas_LengthStr(&FONT_NEOSANS, "<SPACE> to play again");
 
     Canvas_PrintStr(r.x + r.w / 2 - gameoverLength / 2, r.y + 4, &FONT_NEOSANS, 15, "GAME OVER!");
     Canvas_PrintF(r.x + r.w / 2 - scoreLength / 2, r.y + r.h / 2 - 9, &FONT_NEOSANS, 15, "Score: %08d", LEVEL->score);
 
-    Canvas_PrintStr(r.x + r.w / 2 - instructionsLength / 2, r.y + r.h - 10, &FONT_NEOSANS, 15, "<RETURN> to play again");
+    Canvas_PrintStr(r.x + r.w / 2 - instructionsLength / 2, r.y + r.h - 10, &FONT_NEOSANS, 15, "<SPACE> to play again");
 
 
-    if (Input_GetActionPressed(AC_CONFIRM))
+    if (Input_GetActionPressed(AC_ACTION))
     {
       Scope_Pop();
       PopLevel();
     }
     return;
   }
-
+  
   if (LEVEL->camera % 1000 == 0)
   {
     LEVEL->speed++;
@@ -1168,7 +1197,7 @@ void Step()
 
   // printf("P: %i R: %i D: %i\n", Input_GetActionPressed(AC_JUMP), Input_GetActionReleased(AC_JUMP), Input_GetActionDown(AC_JUMP));
 
-  if (Input_GetActionPressed(AC_JUMP))
+  if (Input_GetActionPressed(AC_ACTION))
   {
     for (U32 i=0;i < (MAX_CATS + 1);i++)
     {
@@ -1181,7 +1210,7 @@ void Step()
     }
   }
 
-  if (Input_GetActionDown(AC_JUMP))
+  if (Input_GetActionDown(AC_ACTION))
   {
     for (U32 i=0;i < (MAX_CATS + 1);i++)
     {
@@ -1218,7 +1247,7 @@ void Step()
     if (!playerObject->alive  || playerObject->isJumping)
       continue;
 
-    if (Input_GetActionReleased(AC_JUMP) || (playerObject->wantsToJump && playerObject->feet.tile <= 0))
+    if (Input_GetActionReleased(AC_ACTION) || (playerObject->wantsToJump && playerObject->feet.tile <= 0))
     {
       if (playerObject->testJump.valid)
       {
@@ -1254,10 +1283,16 @@ void Step()
     if (!playerObject->alive)
       continue;
 
-    if (HandlePlayerObject(playerObject, i == 0, reduce, catCentre) == false)
+    int r = HandlePlayerObject(playerObject, i == 0, reduce, catCentre);
+
+    if (r == 0)
     {
       playerObject->alive = false;
       sfxHurt = true;
+    }
+    else if (r == 2)
+    {
+      sfxPickup = true;
     }
   }
 
