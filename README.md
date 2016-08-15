@@ -15,7 +15,7 @@ This was written between the 30 hours of 13th August 2016, to the 14th with abou
 
 The Game was written in [Visual Studio 2015](https://www.visualstudio.com/), using [AseSprite](http://www.aseprite.org/), [Tiled](http://www.mapeditor.org/) and [Photoshop CS6](http://www.adobe.com/uk/products/photoshop.html).
 
-During the development a (Timelapse)[https://vimeo.com/178906894] was recorded.
+During the development a [Timelapse](https://vimeo.com/178906894) was recorded.
 
 # Art Assets
 
